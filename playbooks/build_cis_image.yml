@@ -1,0 +1,25 @@
+---
+- name: Build CIS-compliant image via Red Hat Image Builder
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    image_builder_api: "https://console.redhat.com/api/image-builder/v1"
+    rh_offline_token: "{{ lookup('ansible.builtin.env', 'RH_OFFLINE_TOKEN') }}"
+    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
+    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
+
+  tasks:
+    - name: Assert required environment variables are set
+      ansible.builtin.assert:
+        that:
+          - rh_offline_token | length > 0
+        fail_msg: "RH_OFFLINE_TOKEN must be set"
+
+    # TODO: Exchange offline token for access token
+    # TODO: Create image blueprint with CIS profile
+    # TODO: Trigger compose for AWS AMI
+    # TODO: Poll compose status until complete
+    # TODO: Record AMI ID to output file

@@ -1,0 +1,27 @@
+---
+- name: Deploy image to AWS and extract OpenSCAP results
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    aws_access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+    aws_secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+    scap_results_path: "/root/openscap_data"
+    output_dir: "{{ playbook_dir }}/../output"
+
+  tasks:
+    - name: Assert required environment variables are set
+      ansible.builtin.assert:
+        that:
+          - aws_access_key | length > 0
+          - aws_secret_key | length > 0
+        fail_msg: "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set"
+
+    # TODO: Read AMI ID from build stage output
+    # TODO: Launch temporary t3.micro EC2 instance
+    # TODO: Wait for instance to be reachable
+    # TODO: Pull /root/openscap_data/ results via SSH
+    # TODO: Save XCCDF results to output/
+    # TODO: Terminate instance (always block)

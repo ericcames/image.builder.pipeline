@@ -1,0 +1,9 @@
+---
+# Pipeline environment configuration
+# All sensitive values resolved at runtime via env var lookups — no secrets stored here
+
+rh_offline_token: "{{ lookup('ansible.builtin.env', 'RH_OFFLINE_TOKEN') }}"
+aws_access_key_id: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+aws_secret_access_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"

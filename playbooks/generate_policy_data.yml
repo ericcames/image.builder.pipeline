@@ -1,0 +1,24 @@
+---
+- name: Parse OpenSCAP results and generate policy data.json
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
+    output_dir: "{{ playbook_dir }}/../output"
+    scap_results_file: "{{ output_dir }}/{{ platform }}/scap_results.xml"
+
+  tasks:
+    - name: Assert SCAP results file exists
+      ansible.builtin.assert:
+        that:
+          - scap_results_file is file
+        fail_msg: "SCAP results not found at {{ scap_results_file }} — run deploy_and_scan.yml first"
+
+    # TODO: Parse XCCDF results XML
+    # TODO: Extract passing/failing control IDs and severity
+    # TODO: Identify AWS-specific exempt controls (P3)
+    # TODO: Build data.json structure
+    # TODO: Write output/<platform>/data.json
+    # TODO: Print summary — total checks, passing, failing, exempt

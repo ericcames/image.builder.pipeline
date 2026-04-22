@@ -1,0 +1,33 @@
+# Credentials and secrets
+*.vault
+*.vault.yml
+secrets/
+.env
+*.pem
+*.key
+
+# Ansible
+*.retry
+collections/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pipeline outputs — never commit generated data
+output/
+*.json.generated
