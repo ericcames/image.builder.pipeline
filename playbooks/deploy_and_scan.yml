@@ -11,7 +11,7 @@
     target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
     output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
     instance_type: "t3.micro"
-    scap_results_path: "/root/openscap_data"
+    run_id: "{{ lookup('pipe', 'date +%s') }}"
 
   tasks:
     - name: Assert required environment variables are set
@@ -26,10 +26,14 @@
         src: "{{ output_dir }}/build_output.json"
       register: build_output_raw
 
-    - name: Set AMI ID fact
+    - name: Set AMI facts from build output
       ansible.builtin.set_fact:
-        ami_id: "{{ (build_output_raw.content | b64decode | from_json).ami_id }}"
-        build_region: "{{ (build_output_raw.content | b64decode | from_json).region }}"
+        build_output: "{{ build_output_raw.content | b64decode | from_json }}"
+
+    - name: Set AMI ID and region
+      ansible.builtin.set_fact:
+        ami_id: "{{ build_output.ami_id }}"
+        build_region: "{{ build_output.region }}"
 
     - name: Show AMI to deploy
       ansible.builtin.debug:
@@ -37,7 +41,7 @@
 
     - name: Create temporary SSH key pair
       amazon.aws.ec2_key:
-        name: "image-pipeline-temp-{{ ansible_date_time.epoch | default(lookup('pipe', 'date +%s')) }}"
+        name: "image-pipeline-temp-{{ run_id }}"
         region: "{{ build_region }}"
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
@@ -80,7 +84,7 @@
 
     - name: Create temporary security group
       amazon.aws.ec2_security_group:
-        name: "image-pipeline-temp-sg"
+        name: "image-pipeline-sg-{{ run_id }}"
         description: "Temporary SG for image pipeline scan"
         region: "{{ build_region }}"
         aws_access_key: "{{ aws_access_key }}"
@@ -97,14 +101,13 @@
 
     - name: Launch temporary EC2 instance
       amazon.aws.ec2_instance:
-        name: "image-pipeline-scan-{{ lookup('pipe', 'date +%s') }}"
+        name: "image-pipeline-scan-{{ run_id }}"
         image_id: "{{ ami_id }}"
         instance_type: "{{ instance_type }}"
         region: "{{ build_region }}"
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
         key_name: "{{ temp_keypair.key.name }}"
-        security_groups: ["{{ temp_sg.group_id }}"]
         vpc_subnet_id: "{{ subnet_id }}"
         network_interfaces:
           - assign_public_ip: true
@@ -131,7 +134,7 @@
       ansible.builtin.wait_for:
         host: "{{ instance_ip }}"
         port: 22
-        delay: 30
+        delay: 5
         timeout: 300
 
     - name: Add instance to in-memory inventory
@@ -153,11 +156,15 @@
   gather_facts: false
 
   vars:
-    output_dir: "{{ playbook_dir }}/../output/{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+    output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
     cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
     scap_results_xml: "/tmp/scap-results.xml"
     scap_report_html: "/tmp/scap-report.html"
     ansible_command_timeout: 600
+    scap_data_streams:
+      rhel9: "/usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml"
+      rhel8: "/usr/share/xml/scap/ssg/content/ssg-rhel8-ds.xml"
 
   tasks:
     - name: Wait for cloud-init to complete
@@ -175,6 +182,10 @@
       become: true
       failed_when: false
 
+    - name: Set existing scan flag
+      ansible.builtin.set_fact:
+        no_existing_scap: "{{ existing_scap.files | default([]) | length == 0 }}"
+
     - name: Install openscap-scanner and scap-security-guide
       ansible.builtin.dnf:
         name:
@@ -182,7 +193,7 @@
           - scap-security-guide
         state: present
       become: true
-      when: existing_scap.files | default([]) | length == 0
+      when: no_existing_scap
 
     - name: Run fresh OpenSCAP scan
       ansible.builtin.command:
@@ -196,17 +207,17 @@
           - "{{ scap_results_xml }}"
           - --report
           - "{{ scap_report_html }}"
-          - /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+          - "{{ scap_data_streams[target_platform] }}"
       become: true
       register: oscap_result
       failed_when: oscap_result.rc not in [0, 2]
       async: 600
       poll: 15
-      when: existing_scap.files | default([]) | length == 0
+      when: no_existing_scap
 
     - name: Set SCAP results path
       ansible.builtin.set_fact:
-        scap_xml_path: "{{ (existing_scap.files | default([]) | length > 0) | ternary(existing_scap.files[0].path, scap_results_xml) }}"
+        scap_xml_path: "{{ no_existing_scap | ternary(scap_results_xml, existing_scap.files[0].path) }}"
 
     - name: Fetch SCAP XML results
       ansible.builtin.fetch:
@@ -221,7 +232,7 @@
         dest: "{{ output_dir }}/scap/scap-report.html"
         flat: true
       become: true
-      when: existing_scap.files | default([]) | length == 0
+      when: no_existing_scap
       failed_when: false
 
     - name: Show scan complete
@@ -234,7 +245,6 @@
   gather_facts: false
 
   vars:
-    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1', true) }}"
     aws_access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
     aws_secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
     target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
@@ -253,12 +263,12 @@
 
     - name: Delete temporary security group
       amazon.aws.ec2_security_group:
-        name: "image-pipeline-temp-sg"
+        group_id: "{{ hostvars['localhost']['temp_sg']['group_id'] }}"
         region: "{{ hostvars['localhost']['build_region'] }}"
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
         state: absent
-      when: hostvars['localhost']['build_region'] is defined
+      when: hostvars['localhost']['temp_sg'] is defined
 
     - name: Delete temporary SSH key pair
       amazon.aws.ec2_key:

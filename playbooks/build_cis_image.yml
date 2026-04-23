@@ -8,7 +8,7 @@
     image_builder_api: "https://console.redhat.com/api/image-builder/v1"
     rh_sso_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
     rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible/ansible.cfg') }}"
-    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1', true) }}"
     target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
     cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
     output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
@@ -119,7 +119,7 @@
 
     - name: Save build output to file
       ansible.builtin.copy:
-        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': ami_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'))} | to_nice_json }}"
+        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': ami_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
         dest: "{{ output_dir }}/build_output.json"
         mode: "0644"
 
@@ -127,6 +127,6 @@
       ansible.builtin.debug:
         msg:
           - "Compose complete — AMI: {{ ami_id }}"
-          - "Region: {{ aws_region }}"
+          - "Region: {{ ami_region }}"
           - "Output saved to: {{ output_dir }}/build_output.json"
           - "Next step: ansible-playbook -i <inventory> playbooks/deploy_and_scan.yml"
