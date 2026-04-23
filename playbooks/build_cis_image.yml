@@ -9,7 +9,7 @@
     rh_sso_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
     rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible/ansible.cfg') }}"
     aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
-    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
+    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
     cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
     output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
 
