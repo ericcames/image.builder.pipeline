@@ -47,10 +47,10 @@ See [ROADMAP.md](ROADMAP.md) for full platform schedule.
 - Red Hat offline token in `~/.ansible/ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
   (same token used for Automation Hub — obtain from console.redhat.com → Automation Hub → Connect to Hub → API token)
 - AWS credentials with EC2 permissions
-- Ansible collections: `amazon.aws`, `ansible.builtin`
+- Ansible collections (installed via requirements.yml)
 
 ```bash
-ansible-galaxy collection install amazon.aws -p ./collections
+ansible-galaxy collection install -r collections/requirements.yml -p ./collections
 ```
 
 ## Quick Start

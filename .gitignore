@@ -9,7 +9,8 @@ docs/aws-environment.md
 
 # Ansible
 *.retry
-collections/
+collections/*
+!collections/requirements.yml
 .cache/
 
 # Python
