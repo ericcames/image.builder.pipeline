@@ -44,8 +44,9 @@ See [ROADMAP.md](ROADMAP.md) for full platform schedule.
 ## Prerequisites
 
 - Red Hat account with Image Builder access (console.redhat.com)
-- Red Hat offline token — set as `RH_OFFLINE_TOKEN` env var
-- AWS credentials with EC2 permissions — set as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+- Red Hat offline token in `~/.ansible/ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
+  (same token used for Automation Hub — obtain from console.redhat.com → Automation Hub → Connect to Hub → API token)
+- AWS credentials with EC2 permissions
 - Ansible collections: `amazon.aws`, `ansible.builtin`
 
 ```bash
@@ -57,9 +58,10 @@ ansible-galaxy collection install amazon.aws -p ./collections
 ```bash
 cp -r inventories/sample/ inventories/<customer>-<platform>/
 
-export RH_OFFLINE_TOKEN=<your_token>
 export AWS_ACCESS_KEY_ID=<key>
 export AWS_SECRET_ACCESS_KEY=<secret>
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCOUNT_ID=<your_aws_account_id>
 
 # Full pipeline
 ansible-playbook -i inventories/<customer>-<platform>/ playbooks/build_cis_image.yml

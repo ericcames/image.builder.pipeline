@@ -6,20 +6,126 @@
 
   vars:
     image_builder_api: "https://console.redhat.com/api/image-builder/v1"
-    rh_offline_token: "{{ lookup('ansible.builtin.env', 'RH_OFFLINE_TOKEN') }}"
-    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
+    rh_sso_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+    rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible/ansible.cfg') }}"
     aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
     cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
+    output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
+
+    platform_config:
+      rhel9:
+        distro: "rhel-9"
+        image_type: "aws"
+        architecture: "x86_64"
+      rhel8:
+        distro: "rhel-8"
+        image_type: "aws"
+        architecture: "x86_64"
 
   tasks:
-    - name: Assert required environment variables are set
+    - name: Assert offline token is available
       ansible.builtin.assert:
         that:
           - rh_offline_token | length > 0
-        fail_msg: "RH_OFFLINE_TOKEN must be set"
+        fail_msg: "Red Hat offline token not found in ~/.ansible/ansible.cfg under [galaxy_server.rh_certified]"
 
-    # TODO: Exchange offline token for access token
-    # TODO: Create image blueprint with CIS profile
-    # TODO: Trigger compose for AWS AMI
-    # TODO: Poll compose status until complete
-    # TODO: Record AMI ID to output file
+    - name: Assert target platform is supported
+      ansible.builtin.assert:
+        that:
+          - target_platform in platform_config
+        fail_msg: "Unsupported platform '{{ target_platform }}'. Supported: {{ platform_config.keys() | list }}"
+
+    - name: Exchange offline token for access token
+      ansible.builtin.uri:
+        url: "{{ rh_sso_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: "refresh_token"
+          client_id: "cloud-services"
+          refresh_token: "{{ rh_offline_token }}"
+        status_code: 200
+      register: token_response
+      no_log: true
+
+    - name: Set access token fact
+      ansible.builtin.set_fact:
+        access_token: "{{ token_response.json.access_token }}"
+      no_log: true
+
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create image blueprint with CIS profile
+      ansible.builtin.uri:
+        url: "{{ image_builder_api }}/compose"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          distribution: "{{ platform_config[target_platform].distro }}"
+          image_requests:
+            - architecture: "{{ platform_config[target_platform].architecture }}"
+              image_type: "{{ platform_config[target_platform].image_type }}"
+              upload_request:
+                type: "aws"
+                options:
+                  share_with_accounts:
+                    - "{{ lookup('ansible.builtin.env', 'AWS_ACCOUNT_ID') }}"
+                  region: "{{ aws_region }}"
+          customizations:
+            openscap:
+              profile_id: "{{ cis_profile }}"
+        status_code: 201
+      register: compose_response
+      no_log: true
+
+    - name: Record compose ID
+      ansible.builtin.set_fact:
+        compose_id: "{{ compose_response.json.id }}"
+
+    - name: Show compose ID
+      ansible.builtin.debug:
+        msg: "Compose started — ID: {{ compose_id }}"
+
+    - name: Poll compose status until complete
+      ansible.builtin.uri:
+        url: "{{ image_builder_api }}/composes/{{ compose_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+        status_code: 200
+      register: compose_status
+      until: compose_status.json.image_status.status in ['success', 'failure']
+      retries: 60
+      delay: 30
+      no_log: true
+
+    - name: Fail if compose did not succeed
+      ansible.builtin.fail:
+        msg: "Image Builder compose {{ compose_id }} failed: {{ compose_status.json.image_status | to_json }}"
+      when: compose_status.json.image_status.status == 'failure'
+
+    - name: Extract AMI ID from compose result
+      ansible.builtin.set_fact:
+        ami_id: "{{ compose_status.json.image_status.upload_status.options.ami }}"
+
+    - name: Save build output to file
+      ansible.builtin.copy:
+        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': aws_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'))} | to_nice_json }}"
+        dest: "{{ output_dir }}/build_output.json"
+        mode: "0644"
+
+    - name: Show result
+      ansible.builtin.debug:
+        msg:
+          - "Compose complete — AMI: {{ ami_id }}"
+          - "Region: {{ aws_region }}"
+          - "Output saved to: {{ output_dir }}/build_output.json"
+          - "Next step: ansible-playbook -i <inventory> playbooks/deploy_and_scan.yml"
