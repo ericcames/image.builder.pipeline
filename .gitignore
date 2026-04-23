@@ -5,6 +5,7 @@ secrets/
 .env
 *.pem
 *.key
+docs/aws-environment.md
 
 # Ansible
 *.retry
