@@ -50,6 +50,34 @@
         mode: "0600"
       when: temp_keypair.key.private_key is defined
 
+    - name: Look up first available VPC
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ build_region }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+      register: vpc_info
+
+    - name: Set VPC ID fact
+      ansible.builtin.set_fact:
+        vpc_id: "{{ vpc_info.vpcs[0].vpc_id }}"
+
+    - name: Look up first available subnet in VPC
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ build_region }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: subnet_info
+
+    - name: Set subnet ID fact
+      ansible.builtin.set_fact:
+        subnet_id: "{{ subnet_info.subnets[0].subnet_id }}"
+
+    - name: Show VPC and subnet
+      ansible.builtin.debug:
+        msg: "Using VPC {{ vpc_id }}, subnet {{ subnet_id }}"
+
     - name: Create temporary security group
       amazon.aws.ec2_security_group:
         name: "image-pipeline-temp-sg"
@@ -57,6 +85,7 @@
         region: "{{ build_region }}"
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
+        vpc_id: "{{ vpc_id }}"
         rules:
           - proto: tcp
             ports: [22]
@@ -76,6 +105,9 @@
         aws_secret_key: "{{ aws_secret_key }}"
         key_name: "{{ temp_keypair.key.name }}"
         security_groups: ["{{ temp_sg.group_id }}"]
+        vpc_subnet_id: "{{ subnet_id }}"
+        network:
+          assign_public_ip: true
         wait: true
         state: running
         tags:
