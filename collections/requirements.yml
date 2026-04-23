@@ -1,4 +1,4 @@
 ---
 collections:
   - name: amazon.aws
-  - name: ansible.builtin
+    version: "11.2.0"
