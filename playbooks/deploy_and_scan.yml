@@ -106,8 +106,11 @@
         key_name: "{{ temp_keypair.key.name }}"
         security_groups: ["{{ temp_sg.group_id }}"]
         vpc_subnet_id: "{{ subnet_id }}"
-        network:
-          assign_public_ip: true
+        network_interfaces:
+          - assign_public_ip: true
+            subnet_id: "{{ subnet_id }}"
+            groups: ["{{ temp_sg.group_id }}"]
+            device_index: 0
         wait: true
         state: running
         tags:

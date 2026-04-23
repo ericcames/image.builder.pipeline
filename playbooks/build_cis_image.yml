@@ -112,13 +112,14 @@
         msg: "Image Builder compose {{ compose_id }} failed: {{ compose_status.json.image_status | to_json }}"
       when: compose_status.json.image_status.status == 'failure'
 
-    - name: Extract AMI ID from compose result
+    - name: Extract AMI ID and actual region from compose result
       ansible.builtin.set_fact:
         ami_id: "{{ compose_status.json.image_status.upload_status.options.ami }}"
+        ami_region: "{{ compose_status.json.image_status.upload_status.options.region | default('us-east-1') }}"
 
     - name: Save build output to file
       ansible.builtin.copy:
-        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': aws_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'))} | to_nice_json }}"
+        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': ami_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'))} | to_nice_json }}"
         dest: "{{ output_dir }}/build_output.json"
         mode: "0644"
 
