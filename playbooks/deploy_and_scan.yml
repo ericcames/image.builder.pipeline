@@ -155,30 +155,67 @@
   vars:
     output_dir: "{{ playbook_dir }}/../output/{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
 
+  vars:
+    cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
+    scap_results_xml: "/tmp/scap-results.xml"
+    scap_report_html: "/tmp/scap-report.html"
+
   tasks:
     - name: Wait for cloud-init to complete
       ansible.builtin.raw: cloud-init status --wait
       changed_when: false
       failed_when: false
 
-    - name: Check for SCAP results
+    - name: Check for existing Image Builder SCAP results
       ansible.builtin.find:
         paths: /root/openscap_data
         patterns: "*.xml"
-      register: scap_files
+        file_type: file
+      register: existing_scap
       become: true
+      failed_when: false
 
-    - name: Show SCAP files found
-      ansible.builtin.debug:
-        msg: "Found {{ scap_files.files | length }} SCAP result file(s)"
+    - name: Install openscap-scanner if not present
+      ansible.builtin.raw: dnf install -y openscap-scanner scap-security-guide 2>/dev/null || true
+      become: true
+      changed_when: false
+      when: existing_scap.files | default([]) | length == 0
 
-    - name: Fetch SCAP results
+    - name: Run fresh OpenSCAP scan
+      ansible.builtin.raw: >
+        oscap xccdf eval
+        --profile {{ cis_profile }}
+        --results {{ scap_results_xml }}
+        --report {{ scap_report_html }}
+        /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+      become: true
+      register: oscap_result
+      failed_when: oscap_result.rc not in [0, 2]
+      when: existing_scap.files | default([]) | length == 0
+
+    - name: Set SCAP results path
+      ansible.builtin.set_fact:
+        scap_xml_path: "{{ (existing_scap.files | length > 0) | ternary(existing_scap.files[0].path, scap_results_xml) }}"
+
+    - name: Fetch SCAP XML results
       ansible.builtin.fetch:
-        src: "{{ item.path }}"
-        dest: "{{ output_dir }}/scap/"
-        flat: false
-      loop: "{{ scap_files.files }}"
+        src: "{{ scap_xml_path }}"
+        dest: "{{ output_dir }}/scap/scap-results.xml"
+        flat: true
       become: true
+
+    - name: Fetch SCAP HTML report
+      ansible.builtin.fetch:
+        src: "{{ scap_report_html }}"
+        dest: "{{ output_dir }}/scap/scap-report.html"
+        flat: true
+      become: true
+      when: existing_scap.files | default([]) | length == 0
+      failed_when: false
+
+    - name: Show scan complete
+      ansible.builtin.debug:
+        msg: "SCAP scan complete — results fetched to {{ output_dir }}/scap/"
 
 - name: Terminate temporary instance and clean up
   hosts: localhost
