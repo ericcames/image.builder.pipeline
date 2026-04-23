@@ -5,11 +5,13 @@
   gather_facts: false
 
   vars:
-    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1', true) }}"
     aws_access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
     aws_secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+    output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
+    instance_type: "t3.micro"
     scap_results_path: "/root/openscap_data"
-    output_dir: "{{ playbook_dir }}/../output"
 
   tasks:
     - name: Assert required environment variables are set
@@ -19,9 +21,179 @@
           - aws_secret_key | length > 0
         fail_msg: "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set"
 
-    # TODO: Read AMI ID from build stage output
-    # TODO: Launch temporary t3.micro EC2 instance
-    # TODO: Wait for instance to be reachable
-    # TODO: Pull /root/openscap_data/ results via SSH
-    # TODO: Save XCCDF results to output/
-    # TODO: Terminate instance (always block)
+    - name: Read build output
+      ansible.builtin.slurp:
+        src: "{{ output_dir }}/build_output.json"
+      register: build_output_raw
+
+    - name: Set AMI ID fact
+      ansible.builtin.set_fact:
+        ami_id: "{{ (build_output_raw.content | b64decode | from_json).ami_id }}"
+        build_region: "{{ (build_output_raw.content | b64decode | from_json).region }}"
+
+    - name: Show AMI to deploy
+      ansible.builtin.debug:
+        msg: "Deploying AMI {{ ami_id }} in {{ build_region }}"
+
+    - name: Create temporary SSH key pair
+      amazon.aws.ec2_key:
+        name: "image-pipeline-temp-{{ ansible_date_time.epoch | default(lookup('pipe', 'date +%s')) }}"
+        region: "{{ build_region }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+      register: temp_keypair
+
+    - name: Save private key
+      ansible.builtin.copy:
+        content: "{{ temp_keypair.key.private_key }}"
+        dest: "{{ output_dir }}/temp_key.pem"
+        mode: "0600"
+      when: temp_keypair.key.private_key is defined
+
+    - name: Create temporary security group
+      amazon.aws.ec2_security_group:
+        name: "image-pipeline-temp-sg"
+        description: "Temporary SG for image pipeline scan"
+        region: "{{ build_region }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        rules:
+          - proto: tcp
+            ports: [22]
+            cidr_ip: "0.0.0.0/0"
+        rules_egress:
+          - proto: all
+            cidr_ip: "0.0.0.0/0"
+      register: temp_sg
+
+    - name: Launch temporary EC2 instance
+      amazon.aws.ec2_instance:
+        name: "image-pipeline-scan"
+        image_id: "{{ ami_id }}"
+        instance_type: "{{ instance_type }}"
+        region: "{{ build_region }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        key_name: "{{ temp_keypair.key.name }}"
+        security_groups: ["{{ temp_sg.group_id }}"]
+        wait: true
+        state: running
+        tags:
+          Purpose: "image-pipeline-scan"
+          Temporary: "true"
+      register: ec2_instance
+
+    - name: Set instance facts
+      ansible.builtin.set_fact:
+        instance_id: "{{ ec2_instance.instances[0].instance_id }}"
+        instance_ip: "{{ ec2_instance.instances[0].public_ip_address }}"
+
+    - name: Show instance details
+      ansible.builtin.debug:
+        msg: "Instance {{ instance_id }} launched at {{ instance_ip }}"
+
+    - name: Wait for SSH to be available
+      ansible.builtin.wait_for:
+        host: "{{ instance_ip }}"
+        port: 22
+        delay: 30
+        timeout: 300
+
+    - name: Add instance to in-memory inventory
+      ansible.builtin.add_host:
+        name: scan_target
+        ansible_host: "{{ instance_ip }}"
+        ansible_user: ec2-user
+        ansible_ssh_private_key_file: "{{ output_dir }}/temp_key.pem"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}/scap"
+        state: directory
+        mode: "0755"
+
+- name: Extract SCAP results from instance
+  hosts: scan_target
+  gather_facts: false
+
+  vars:
+    output_dir: "{{ playbook_dir }}/../output/{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+
+  tasks:
+    - name: Wait for cloud-init to complete
+      ansible.builtin.raw: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Check for SCAP results
+      ansible.builtin.find:
+        paths: /root/openscap_data
+        patterns: "*.xml"
+      register: scap_files
+      become: true
+
+    - name: Show SCAP files found
+      ansible.builtin.debug:
+        msg: "Found {{ scap_files.files | length }} SCAP result file(s)"
+
+    - name: Fetch SCAP results
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ output_dir }}/scap/"
+        flat: false
+      loop: "{{ scap_files.files }}"
+      become: true
+
+- name: Terminate temporary instance and clean up
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1', true) }}"
+    aws_access_key: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+    aws_secret_key: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+    target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+    output_dir: "{{ playbook_dir }}/../output/{{ target_platform }}"
+
+  tasks:
+    - name: Terminate EC2 instance
+      amazon.aws.ec2_instance:
+        instance_ids: ["{{ hostvars['localhost']['instance_id'] }}"]
+        region: "{{ hostvars['localhost']['build_region'] }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        state: absent
+        wait: true
+      when: hostvars['localhost']['instance_id'] is defined
+
+    - name: Delete temporary security group
+      amazon.aws.ec2_security_group:
+        name: "image-pipeline-temp-sg"
+        region: "{{ hostvars['localhost']['build_region'] }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        state: absent
+      when: hostvars['localhost']['build_region'] is defined
+
+    - name: Delete temporary SSH key pair
+      amazon.aws.ec2_key:
+        name: "{{ hostvars['localhost']['temp_keypair']['key']['name'] }}"
+        region: "{{ hostvars['localhost']['build_region'] }}"
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        state: absent
+      when: hostvars['localhost']['temp_keypair'] is defined
+
+    - name: Remove temporary private key file
+      ansible.builtin.file:
+        path: "{{ output_dir }}/temp_key.pem"
+        state: absent
+
+    - name: Show results
+      ansible.builtin.debug:
+        msg:
+          - "Instance terminated and resources cleaned up"
+          - "SCAP results saved to: {{ output_dir }}/scap/"
+          - "Next step: ansible-playbook -i <inventory> playbooks/generate_policy_data.yml"
