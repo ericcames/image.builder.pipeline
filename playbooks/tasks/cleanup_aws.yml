@@ -1,0 +1,36 @@
+---
+# Tear down the AWS resources created by deploy_and_scan.yml.
+# Included from the scan play's always: block so cleanup runs regardless
+# of whether the scan succeeded. Runs once on localhost via delegate_to.
+#
+# Relies on boto3 env-var credential auto-discovery (AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION) rather than passing keys
+# explicitly. Resource identifiers are read from hostvars['localhost']
+# because they were registered or set_fact'd during the provisioning play.
+
+- name: Terminate EC2 instance
+  amazon.aws.ec2_instance:
+    instance_ids: ["{{ hostvars['localhost']['instance_id'] }}"]
+    region: "{{ hostvars['localhost']['build_region'] }}"
+    state: absent
+    wait: true
+  when: hostvars['localhost']['instance_id'] is defined
+
+- name: Delete temporary security group
+  amazon.aws.ec2_security_group:
+    group_id: "{{ hostvars['localhost']['temp_sg']['group_id'] }}"
+    region: "{{ hostvars['localhost']['build_region'] }}"
+    state: absent
+  when: hostvars['localhost']['temp_sg'] is defined
+
+- name: Delete temporary SSH key pair
+  amazon.aws.ec2_key:
+    name: "{{ hostvars['localhost']['temp_keypair']['key']['name'] }}"
+    region: "{{ hostvars['localhost']['build_region'] }}"
+    state: absent
+  when: hostvars['localhost']['temp_keypair'] is defined
+
+- name: Remove temporary private key file
+  ansible.builtin.file:
+    path: "{{ output_dir }}/temp_key.pem"
+    state: absent
