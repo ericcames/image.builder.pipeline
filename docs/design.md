@@ -169,3 +169,68 @@ Key decisions made during planning (2026-04-22):
 - **P1 gate logic in orchestrator only** — individual modules emit severity-tagged violations; `rhel9_golden_image_main.rego` decides ALLOW/DENY
 - **Exempt controls enumerated by this pipeline** — not hardcoded in Rego
 - **RHEL 9 before Windows** — establish patterns on the well-defined platform first
+
+---
+
+## 9. Integration with demo.datacenter (DC1)
+
+A second consumer of this pipeline's output, distinct from `rego_policy_libraries`.
+DC1 consumes the **AMIs themselves** — not `data.json` — as the boot image for its
+Layer 1 Satellite host and Layer 3 RHEL workload nodes.
+
+**Status:** Target state. Pipeline does not yet apply the naming/tagging contract
+below. Tracked as Phase 1.5 in `ROADMAP.md`.
+
+### 9.1 Discovery mechanism
+
+DC1's Terraform discovers AMIs via `data "aws_ami"` with a name-pattern filter,
+defined in `demo.datacenter/roles/infrastructure/files/variables.tf`:
+
+```hcl
+variable "rhel9_ami_name" {
+  default = "rhel9-cis-l1-*"   # was "RHEL-9.4*Hourly*"
+}
+```
+
+The `data.tf.j2` `aws_ami` block changes its owner from Red Hat's AWS account to
+`self`. No cross-account sharing — pipeline and DC1 share one AWS account.
+
+### 9.2 AMI naming contract
+
+```
+{os}-cis-l{level}-{YYYYMMDD-HHMM}
+```
+
+Examples:
+- `rhel9-cis-l1-20260511-1430`
+- `rhel9-cis-l2-20260511-1430`
+- `rhel8-cis-l1-20260612-0900`
+
+DC1's filter selects the most-recent matching AMI. Breaking this pattern breaks
+DC1 discovery — treat it as a versioned cross-repo contract.
+
+### 9.3 Required AMI tags
+
+| Tag | Value | Why |
+|---|---|---|
+| `Pipeline` | `image-builder-pipeline` | Provenance — filter to pipeline-built only |
+| `OS` | `rhel9`, `rhel8`, `win2022` | Secondary filter dimension |
+| `CIS-Level` | `L1`, `L2` | Workload groups may select level |
+| `BuildDate` | ISO 8601 timestamp | Age tracking |
+| `ComposeID` | Image Builder compose UUID | Traceability back to pipeline logs |
+
+### 9.4 Architecture: OS-only, not product-baked
+
+Pipeline produces **OS-only** hardened AMIs. Product installs (Satellite, app
+stacks) happen **on top** via DC1's existing setup playbooks
+(e.g., `satellite_setup.yml`). Rationale:
+
+- Satellite has post-install state (orgs, manifests, certs, content views) that doesn't AMI-ify cleanly
+- Keeps the pipeline product-agnostic — one `rhel9-cis-l1` AMI serves Satellite host, workload nodes, and any future product
+- DC1's existing setup playbooks need only the AMI filter swap to consume hardened AMIs
+
+### 9.5 CIS Level selection per DC1 layer
+
+- **Satellite host (Layer 1):** CIS L1 only. L2 firewall/service tightening fights Satellite's installer (requires ports 80, 443, 5647, 8000, 8140, 9090 open and several services running).
+- **RHEL workload nodes (Layer 3):** L1 baseline; L2 available per workload group as L2 builds mature.
+- **F5 / Palo Alto / Infoblox:** Out of scope — appliance AMIs come from AWS Marketplace, not this pipeline.
