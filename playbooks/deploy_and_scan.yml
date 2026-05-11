@@ -253,8 +253,6 @@
             file: tasks/cleanup_aws.yml
             apply:
               delegate_to: localhost
-              run_once: true
-          run_once: true
 
         - name: Show cleanup result
           ansible.builtin.debug:
@@ -263,4 +261,3 @@
               - "SCAP results (if extracted): {{ output_dir }}/scap/"
               - "Next step: ansible-playbook playbooks/generate_policy_data.yml"
           delegate_to: localhost
-          run_once: true
