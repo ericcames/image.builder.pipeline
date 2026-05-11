@@ -119,9 +119,17 @@
 
     - name: Save build output to file
       ansible.builtin.copy:
-        content: "{{ {'compose_id': compose_id, 'ami_id': ami_id, 'region': ami_region, 'platform': target_platform, 'cis_profile': cis_profile, 'build_date': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
+        content: "{{ build_output | to_nice_json }}"
         dest: "{{ output_dir }}/build_output.json"
         mode: "0644"
+      vars:
+        build_output:
+          compose_id: "{{ compose_id }}"
+          ami_id: "{{ ami_id }}"
+          region: "{{ ami_region }}"
+          platform: "{{ target_platform }}"
+          cis_profile: "{{ cis_profile }}"
+          build_date: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
 
     - name: Show result
       ansible.builtin.debug:
