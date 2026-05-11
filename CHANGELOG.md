@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `docs/design.md` — full pipeline design, including §6 (OPA consumer) and §9 (demo.datacenter consumer / AMI naming contract)
 - `playbooks/build_cis_image.yml` — Image Builder API integration: token exchange, blueprint creation, compose trigger, polling, AMI capture
 - `playbooks/deploy_and_scan.yml` — EC2 deploy, SCAP result extraction, fresh OpenSCAP scan fallback when build-time results are missing
-- `playbooks/generate_policy_data.yml` — skeleton (Phase 1 gap)
+- `playbooks/generate_policy_data.yml` — XCCDF results parser, hardening-score computation, `data.json` generator per `docs/design.md` §3
+- `playbooks/filter_plugins/xccdf.py` — namespace-agnostic XCCDF parser; returns rule counts, severity breakdown, hardening score (pass / (pass + fail), excluding N/A and notchecked), and AWS exempt-control candidates (auto-emitted for low-severity failures)
 - Sample inventory — Red Hat offline token via `~/.ansible/ansible.cfg`, AWS credentials via env vars
 - `collections/requirements.yml` pinning `amazon.aws` to 11.2.0
 - `.gitignore` covering credentials, collections, and generated output
@@ -30,3 +31,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `network_interfaces` deprecation in `amazon.aws` module
 - Empty `TARGET_PLATFORM` env var handled with default filter
 - Duplicate vars block in `deploy_and_scan.yml` merged
+- `generate_policy_data.yml` now reads `scap/scap-results.xml` (matches the path `deploy_and_scan.yml` writes)

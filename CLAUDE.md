@@ -41,7 +41,7 @@ If a change works for one consumer but breaks the other, it doesn't ship.
 
 ## Current state (2026-05-11)
 
-- Phase 1 (RHEL 9 CIS L1) — build + scan working; `generate_policy_data.yml` still skeleton (the Phase 1 gap)
+- Phase 1 (RHEL 9 CIS L1) — build + scan + `data.json` generator complete; pending end-to-end smoke test (build → scan → generate → OPA consumes)
 - Phase 1.5 (DC1 integration) — not started; pipeline doesn't yet apply naming/tagging contract
 - Phase 2 (CIS L2, RHEL 8) — not started
 

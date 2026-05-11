@@ -20,9 +20,9 @@ and serving as the source of hardened AMIs for
 | AWS EC2 deploy and SCAP result extraction | Complete |
 | Fresh OpenSCAP scan fallback when build-time results unavailable | Complete |
 | `collections/requirements.yml` and pinned `amazon.aws` | Complete |
-| OpenSCAP XCCDF result parser | **Pending** |
-| `data.json` generator for `golden_images/os/linux/rhel_9/` | **Pending** |
-| Enumerate and document AWS-specific exempt controls (P3) | Pending |
+| OpenSCAP XCCDF result parser | Complete |
+| `data.json` generator for `golden_images/os/linux/rhel_9/` | Complete |
+| Enumerate and document AWS-specific exempt controls (P3) | Complete (auto-emitted from low-severity fails; reasons reviewed on first real scan) |
 | End-to-end smoke test: build → scan → generate → OPA consumes | Pending |
 
 ---
