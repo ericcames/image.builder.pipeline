@@ -5,9 +5,18 @@
   gather_facts: false
 
   vars:
-    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9') }}"
+    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
     output_dir: "{{ playbook_dir }}/../output"
-    scap_results_file: "{{ output_dir }}/{{ platform }}/scap_results.xml"
+    scap_results_file: "{{ output_dir }}/{{ platform }}/scap/scap-results.xml"
+    build_output_file: "{{ output_dir }}/{{ platform }}/build_output.json"
+    data_json_file: "{{ output_dir }}/{{ platform }}/data.json"
+
+    # Static policy fields per docs/design.md §3
+    approved_builders: ["imagebuilder", "packer", "ansible-aac"]
+    max_image_age_days: 90
+    min_hardening_score: 95
+    required_packages: ["aide", "audit", "firewalld", "openscap-scanner"]
+    denied_packages: ["telnet", "rsh", "xinetd"]
 
   tasks:
     - name: Assert SCAP results file exists
@@ -16,9 +25,52 @@
           - scap_results_file is file
         fail_msg: "SCAP results not found at {{ scap_results_file }} — run deploy_and_scan.yml first"
 
-    # TODO: Parse XCCDF results XML
-    # TODO: Extract passing/failing control IDs and severity
-    # TODO: Identify AWS-specific exempt controls (P3)
-    # TODO: Build data.json structure
-    # TODO: Write output/<platform>/data.json
-    # TODO: Print summary — total checks, passing, failing, exempt
+    - name: Read SCAP results XML
+      ansible.builtin.slurp:
+        src: "{{ scap_results_file }}"
+      register: scap_raw
+
+    - name: Parse XCCDF results
+      ansible.builtin.set_fact:
+        scan: "{{ (scap_raw.content | b64decode) | xccdf_parse }}"
+
+    - name: Read build output if present
+      ansible.builtin.slurp:
+        src: "{{ build_output_file }}"
+      register: build_raw
+      failed_when: false
+
+    - name: Set approved_base_images from build output
+      ansible.builtin.set_fact:
+        approved_base_images: >-
+          {{ [(build_raw.content | b64decode | from_json).ami_id]
+             if (build_raw.content is defined)
+             else [] }}
+
+    - name: Build data.json structure
+      ansible.builtin.set_fact:
+        data_json:
+          approved_base_images: "{{ approved_base_images }}"
+          approved_builders: "{{ approved_builders }}"
+          approved_signing_keys: []
+          max_image_age_days: "{{ max_image_age_days }}"
+          min_hardening_score: "{{ min_hardening_score }}"
+          required_packages: "{{ required_packages }}"
+          denied_packages: "{{ denied_packages }}"
+          exempt_controls: "{{ scan.exempt_candidates }}"
+
+    - name: Write data.json
+      ansible.builtin.copy:
+        dest: "{{ data_json_file }}"
+        content: "{{ data_json | to_nice_json(indent=2) }}\n"
+        mode: "0644"
+
+    - name: Show scan summary
+      ansible.builtin.debug:
+        msg:
+          - "Hardening score: {{ scan.hardening_score }} (gate: {{ min_hardening_score }})"
+          - "Pass: {{ scan.passing }} | Fail: {{ scan.failing }} | N/A: {{ scan.notapplicable }} | Not-checked: {{ scan.notchecked }}"
+          - "Failures by XCCDF severity: {{ scan.failures_by_severity }}"
+          - "Exempt candidates (low-severity AWS quirks): {{ scan.exempt_candidates | length }}"
+          - "Approved base images: {{ approved_base_images }}"
+          - "Wrote {{ data_json_file }}"
