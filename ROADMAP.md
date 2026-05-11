@@ -23,7 +23,7 @@ and serving as the source of hardened AMIs for
 | OpenSCAP XCCDF result parser | Complete |
 | `data.json` generator for `golden_images/os/linux/rhel_9/` | Complete |
 | Enumerate and document AWS-specific exempt controls (P3) | Complete (auto-emitted from low-severity fails; reasons reviewed on first real scan) |
-| End-to-end smoke test: build → scan → generate → OPA consumes | Pending |
+| End-to-end smoke test: build → scan → generate | Complete (2026-05-11; OPA-consumes side tracked separately) |
 
 ---
 

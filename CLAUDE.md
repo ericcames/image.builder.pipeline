@@ -41,7 +41,7 @@ If a change works for one consumer but breaks the other, it doesn't ship.
 
 ## Current state (2026-05-11)
 
-- Phase 1 (RHEL 9 CIS L1) — build + scan + `data.json` generator complete; pending end-to-end smoke test (build → scan → generate → OPA consumes)
+- Phase 1 (RHEL 9 CIS L1) — **end-to-end run completed 2026-05-11** (AMI `ami-068ff0ada2adefba5`, score 94.94 vs gate 95). Open follow-ups: #4 token-expiration in poll, #5 t3.micro OOM, #6 cleanup-on-failure, #7 score-vs-gate tuning
 - Phase 1.5 (DC1 integration) — not started; pipeline doesn't yet apply naming/tagging contract
 - Phase 2 (CIS L2, RHEL 8) — not started
 

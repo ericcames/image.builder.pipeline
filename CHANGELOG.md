@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IdentitiesOnly=yes for SSH; unique per-run EC2 instance names
 - CI lint workflow restored to green (closes #2): `.yamllint` relaxes `line-length` to 120 (Ansible community norm); `ansible/ansible-lint` action bumped `v24 → v26` for `ansible-core` 2.19 compatibility
 - `build_cis_image.yml`: build-output dict moved to a `vars:` block (was a 224-char inline Jinja expression)
+- Phase 1 end-to-end run completed 2026-05-11 — first real RHEL 9 CIS L1 AMI through the full pipeline. Score 94.94 vs gate 95; follow-ups tracked in #4, #5, #6, #7
 
 ### Fixed
 - AMI region taken from compose result instead of assumed
