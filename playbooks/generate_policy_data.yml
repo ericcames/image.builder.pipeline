@@ -5,7 +5,9 @@
   gather_facts: false
 
   vars:
-    platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
+    platform: >-
+      {{ lookup('ansible.builtin.env', 'TARGET_PLATFORM')
+         | default('rhel9', true) }}
     output_dir: "{{ playbook_dir }}/../output"
     scap_results_file: "{{ output_dir }}/{{ platform }}/scap/scap-results.xml"
     build_output_file: "{{ output_dir }}/{{ platform }}/build_output.json"
@@ -23,7 +25,9 @@
       ansible.builtin.assert:
         that:
           - scap_results_file is file
-        fail_msg: "SCAP results not found at {{ scap_results_file }} — run deploy_and_scan.yml first"
+        fail_msg: >-
+          SCAP results not found at {{ scap_results_file }} —
+          run deploy_and_scan.yml first
 
     - name: Read SCAP results XML
       ansible.builtin.slurp:
@@ -68,9 +72,10 @@
     - name: Show scan summary
       ansible.builtin.debug:
         msg:
-          - "Hardening score: {{ scan.hardening_score }} (gate: {{ min_hardening_score }})"
-          - "Pass: {{ scan.passing }} | Fail: {{ scan.failing }} | N/A: {{ scan.notapplicable }} | Not-checked: {{ scan.notchecked }}"
+          - "Score {{ scan.hardening_score }} (gate: {{ min_hardening_score }})"
+          - "Pass: {{ scan.passing }} | Fail: {{ scan.failing }}"
+          - "N/A: {{ scan.notapplicable }} | Not-checked: {{ scan.notchecked }}"
           - "Failures by XCCDF severity: {{ scan.failures_by_severity }}"
-          - "Exempt candidates (low-severity AWS quirks): {{ scan.exempt_candidates | length }}"
+          - "Exempt candidates: {{ scan.exempt_candidates | length }}"
           - "Approved base images: {{ approved_base_images }}"
           - "Wrote {{ data_json_file }}"
