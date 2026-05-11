@@ -94,28 +94,34 @@
       ansible.builtin.debug:
         msg: "Compose started — ID: {{ compose_id }}"
 
-    - name: Poll compose status until complete
-      ansible.builtin.uri:
-        url: "{{ image_builder_api }}/composes/{{ compose_id }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ access_token }}"
-        status_code: 200
-      register: compose_status
-      until: compose_status.json.image_status.status in ['success', 'failure']
-      retries: 60
-      delay: 30
-      no_log: true
+    # Polling is delegated to scripts/wait_for_compose.py because the
+    # access token expires after ~15 min and real composes routinely
+    # outlive that. The helper refreshes the token every iteration. See #4.
+    - name: Wait for compose to complete (with token refresh)
+      block:
+        - name: Run compose wait helper
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ playbook_dir }}/scripts/wait_for_compose.py"
+              - "{{ compose_id }}"
+          environment:
+            RH_OFFLINE_TOKEN: "{{ rh_offline_token }}"
+          register: compose_result
+          changed_when: false
+          no_log: true  # protects RH_OFFLINE_TOKEN in env from verbose dumps
+      rescue:
+        - name: Show compose wait failure details
+          ansible.builtin.fail:
+            msg: |
+              Compose {{ compose_id }} did not complete successfully.
+              rc={{ compose_result.rc | default('unknown') }}
+              stderr={{ compose_result.stderr | default('(no stderr captured)') }}
 
-    - name: Fail if compose did not succeed
-      ansible.builtin.fail:
-        msg: "Image Builder compose {{ compose_id }} failed: {{ compose_status.json.image_status | to_json }}"
-      when: compose_status.json.image_status.status == 'failure'
-
-    - name: Extract AMI ID and actual region from compose result
+    - name: Parse compose result
       ansible.builtin.set_fact:
-        ami_id: "{{ compose_status.json.image_status.upload_status.options.ami }}"
-        ami_region: "{{ compose_status.json.image_status.upload_status.options.region | default('us-east-1') }}"
+        ami_id: "{{ (compose_result.stdout | from_json).ami_id }}"
+        ami_region: "{{ (compose_result.stdout | from_json).region | default('us-east-1') }}"
 
     - name: Save build output to file
       ansible.builtin.copy:

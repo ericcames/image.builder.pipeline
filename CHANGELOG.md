@@ -35,3 +35,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Empty `TARGET_PLATFORM` env var handled with default filter
 - Duplicate vars block in `deploy_and_scan.yml` merged
 - `generate_policy_data.yml` now reads `scap/scap-results.xml` (matches the path `deploy_and_scan.yml` writes)
+- `build_cis_image.yml` no longer fails mid-compose when the access token expires — polling moved to `scripts/wait_for_compose.py` which refreshes the token every iteration. Closes #4
+- `deploy_and_scan.yml` default instance type bumped `t3.micro → t3.medium`; the smaller size OOMs reliably during the RHEL 9 SCAP scan. Closes #5
+- `deploy_and_scan.yml` cleanup now lives in a `block:`/`always:` so AWS resources are torn down even when the scan task fails. Closes #6
