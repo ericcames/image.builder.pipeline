@@ -1,0 +1,18 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: error
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+  # ansible-lint compatibility (see docs.ansible.com/projects/lint/rules/yaml/)
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

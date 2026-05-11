@@ -211,6 +211,7 @@
       become: true
       register: oscap_result
       failed_when: oscap_result.rc not in [0, 2]
+      changed_when: false
       async: 600
       poll: 15
       when: no_existing_scap

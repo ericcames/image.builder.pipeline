@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Dynamic VPC and subnet discovery instead of relying on default VPC
 - Async oscap execution for long-running scans
 - IdentitiesOnly=yes for SSH; unique per-run EC2 instance names
+- CI lint workflow restored to green (closes #2): `.yamllint` relaxes `line-length` to 120 (Ansible community norm); `ansible/ansible-lint` action bumped `v24 → v26` for `ansible-core` 2.19 compatibility
+- `build_cis_image.yml`: build-output dict moved to a `vars:` block (was a 224-char inline Jinja expression)
 
 ### Fixed
 - AMI region taken from compose result instead of assumed
