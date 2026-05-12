@@ -80,6 +80,15 @@
                     - "{{ lookup('ansible.builtin.env', 'AWS_ACCOUNT_ID') }}"
                   region: "{{ aws_region }}"
           customizations:
+            # CIS L1 expects these packages; Image Builder's default RHEL 9
+            # blueprint doesn't include them. First experiment toward #10 —
+            # validates whether package install alone unblocks SSG remediation
+            # for the dependent rules (AIDE init, firewalld zones, etc.) or
+            # whether we also need files:/services: customizations.
+            packages:
+              - aide
+              - firewalld
+              - systemd-journal-remote
             openscap:
               profile_id: "{{ cis_profile }}"
         status_code: 201
