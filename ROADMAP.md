@@ -38,10 +38,9 @@ marketplace AMIs. See `docs/design.md` §9 for the contract.
 
 | Task | Status |
 |------|--------|
-| Implement AMI naming + tagging in `build_cis_image.yml` per design.md §9 | Pending |
-| Update DC1 `roles/infrastructure/files/variables.tf` — `rhel9_ami_name` filter to `rhel9-cis-l1-*` | Pending |
-| Update DC1 `data.tf.j2` — owner from Red Hat account to `self` | Pending |
-| Smoke test: `satellite_setup.yml` installs cleanly on `rhel9-cis-l1` base | Pending |
+| Implement AMI tagging contract in `build_cis_image.yml` per design.md §9.2 | Complete (this PR — 6 tags: `Pipeline`, `OS`, `CIS-Level`, `BuildDate`, `ComposeID`, `Name`) |
+| Update DC1 `data.tf.j2` — owner from Red Hat account to `self`; switch to tag-based `aws_ami` filter (Pipeline + OS + CIS-Level) | Pending |
+| Smoke test: `satellite_setup.yml` installs cleanly on tagged pipeline AMI | Pending |
 | Document any CIS-L1-vs-Satellite exempt controls discovered | Pending |
 | Roll AMI consumption to all RHEL 9 DC1 nodes | Pending |
 

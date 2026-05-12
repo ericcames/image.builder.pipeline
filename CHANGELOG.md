@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Two more curated exempts (closes #12): `file_permission_user_init_files` (P2; rule targets deployed-system user homes, not the image artifact) and `sshd_limit_user_access` (P3; SSH access policy is a consumer decision)
 - `docs/cis-l1-rhel9-status.md` — snapshot of the latest validated compliance state (AMI, score, exempt rules, reproduction steps, validation history). Linked from README's platform table
 - Project docs synced to Phase 1 completion state: ROADMAP marks Phase 1 Complete with all new tasks logged; CLAUDE.md current-state paragraph updated; design.md §3 `data.json` example replaced with a real entry instead of placeholder text
+- Phase 1.5: pipeline applies the AMI tagging contract (6 tags: `Pipeline`, `OS`, `CIS-Level`, `BuildDate`, `ComposeID`, `Name`) via `amazon.aws.ec2_tag` after compose. Design changed from name-based to tag-based discovery — `docs/design.md` §9.1-9.2 rewritten. DC1's eventual filter becomes a tag filter, not a name filter
 - Initial repository structure, MIT License, Contributor Covenant Code of Conduct
 - README with architecture overview and quick start
 - ROADMAP — Phase 1 (RHEL 9 L1), Phase 1.5 (DC1 integration), Phase 2 (L2 / RHEL 8), Phase 3 (Windows), Phase 4 (other platforms)

@@ -217,48 +217,58 @@ A second consumer of this pipeline's output, distinct from `rego_policy_librarie
 DC1 consumes the **AMIs themselves** — not `data.json` — as the boot image for its
 Layer 1 Satellite host and Layer 3 RHEL workload nodes.
 
-**Status:** Target state. Pipeline does not yet apply the naming/tagging contract
-below. Tracked as Phase 1.5 in `ROADMAP.md`.
+**Status:** Pipeline applies the tagging contract below as of Phase 1.5. DC1's
+`variables.tf` swap to consume these tags is the remaining Phase 1.5 work.
 
-### 9.1 Discovery mechanism
+### 9.1 Discovery mechanism — tag-based
 
-DC1's Terraform discovers AMIs via `data "aws_ami"` with a name-pattern filter,
-defined in `demo.datacenter/roles/infrastructure/files/variables.tf`:
+DC1's Terraform discovers AMIs via `data "aws_ami"` with tag filters. Tag-based
+discovery is more flexible than name-pattern matching: consumers can filter on
+any combination of provenance / OS / level without coupling to a specific name
+format.
 
 ```hcl
-variable "rhel9_ami_name" {
-  default = "rhel9-cis-l1-*"   # was "RHEL-9.4*Hourly*"
+data "aws_ami" "rhel9_cis_l1" {
+  owners      = ["self"]
+  most_recent = true
+
+  filter {
+    name   = "tag:Pipeline"
+    values = ["image-builder-pipeline"]
+  }
+  filter {
+    name   = "tag:OS"
+    values = ["rhel9"]
+  }
+  filter {
+    name   = "tag:CIS-Level"
+    values = ["L1"]
+  }
 }
 ```
 
-The `data.tf.j2` `aws_ami` block changes its owner from Red Hat's AWS account to
-`self`. No cross-account sharing — pipeline and DC1 share one AWS account.
+`owners = ["self"]` reflects that pipeline and DC1 share one AWS account; no
+cross-account sharing. `most_recent = true` picks the freshest matching build,
+which is also reflected in the `BuildDate` tag for explicit age checks.
 
-### 9.2 AMI naming contract
+### 9.2 AMI tagging contract
 
-```
-{os}-cis-l{level}-{YYYYMMDD-HHMM}
-```
-
-Examples:
-- `rhel9-cis-l1-20260511-1430`
-- `rhel9-cis-l2-20260511-1430`
-- `rhel8-cis-l1-20260612-0900`
-
-DC1's filter selects the most-recent matching AMI. Breaking this pattern breaks
-DC1 discovery — treat it as a versioned cross-repo contract.
-
-### 9.3 Required AMI tags
+The pipeline applies six tags to every AMI it produces. These are the versioned
+cross-repo contract with DC1 and any other consumer:
 
 | Tag | Value | Why |
 |---|---|---|
 | `Pipeline` | `image-builder-pipeline` | Provenance — filter to pipeline-built only |
-| `OS` | `rhel9`, `rhel8`, `win2022` | Secondary filter dimension |
+| `OS` | `rhel9`, `rhel8`, `win2022` | Filter dimension |
 | `CIS-Level` | `L1`, `L2` | Workload groups may select level |
-| `BuildDate` | ISO 8601 timestamp | Age tracking |
+| `BuildDate` | ISO 8601 timestamp (e.g. `2026-05-12T01:00:00Z`) | Age tracking |
 | `ComposeID` | Image Builder compose UUID | Traceability back to pipeline logs |
+| `Name` | `{os}-cis-l{level}-{YYYYMMDD-HHMM}` (e.g. `rhel9-cis-l1-20260512-0100`) | Human-readable label for AWS console / CLI listings |
 
-### 9.4 Architecture: OS-only, not product-baked
+The `Name` tag follows a stable pattern but is *not* a discovery key — it's
+operator convenience. Discovery uses `Pipeline` + `OS` + `CIS-Level`.
+
+### 9.3 Architecture: OS-only, not product-baked
 
 Pipeline produces **OS-only** hardened AMIs. Product installs (Satellite, app
 stacks) happen **on top** via DC1's existing setup playbooks
@@ -268,7 +278,7 @@ stacks) happen **on top** via DC1's existing setup playbooks
 - Keeps the pipeline product-agnostic — one `rhel9-cis-l1` AMI serves Satellite host, workload nodes, and any future product
 - DC1's existing setup playbooks need only the AMI filter swap to consume hardened AMIs
 
-### 9.5 CIS Level selection per DC1 layer
+### 9.4 CIS Level selection per DC1 layer
 
 - **Satellite host (Layer 1):** CIS L1 only. L2 firewall/service tightening fights Satellite's installer (requires ports 80, 443, 5647, 8000, 8140, 9090 open and several services running).
 - **RHEL workload nodes (Layer 3):** L1 baseline; L2 available per workload group as L2 builds mature.
