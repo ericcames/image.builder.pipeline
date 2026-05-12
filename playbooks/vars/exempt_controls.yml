@@ -1,0 +1,40 @@
+---
+# Curated exempt controls — CIS rules that are structurally incompatible with
+# the deployment environment and therefore should not count against the image's
+# hardening score. Merged with auto-emitted low-severity candidates in
+# generate_policy_data.yml; curated entries win on duplicate control_id.
+#
+# Severity uses the policy taxonomy (P1 = highest priority), mapped from XCCDF:
+#   XCCDF high   -> P1
+#   XCCDF medium -> P2
+#   XCCDF low    -> P3
+#
+# Canonical reasons also documented in docs/design.md §5.
+
+curated_exempt_controls:
+  rhel9:
+    - control_id: xccdf_org.ssgproject.content_rule_grub2_password
+      severity: P1
+      reason: >-
+        Cloud VMs do not expose the console boot path that a grub2 password
+        protects. Baking a password into the AMI is both ineffective (no
+        console-recovery path on AWS) and a credential-leak risk (password
+        stored in the image artifact).
+      applies_to: [aws_ami]
+
+    - control_id: xccdf_org.ssgproject.content_rule_ensure_root_password_configured
+      severity: P2
+      reason: >-
+        RHEL on AWS uses ec2-user with SSH key authentication; root password
+        is not part of the security model. Setting one provides no defense
+        against an attacker who can already reach the instance and creates a
+        credential leak risk in the AMI artifact.
+      applies_to: [aws_ami]
+
+    - control_id: xccdf_org.ssgproject.content_rule_partition_for_tmp
+      severity: P3
+      reason: >-
+        AWS EBS-backed AMIs use a single root partition that cloud-init
+        expands at first boot. A separate /tmp partition is incompatible
+        with that launch flow.
+      applies_to: [aws_ami]

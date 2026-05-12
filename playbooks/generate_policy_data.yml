@@ -38,6 +38,20 @@
       ansible.builtin.set_fact:
         scan: "{{ (scap_raw.content | b64decode) | xccdf_parse }}"
 
+    - name: Load curated exempt controls
+      ansible.builtin.include_vars: vars/exempt_controls.yml
+
+    - name: Merge curated and auto-emitted exempt controls
+      ansible.builtin.set_fact:
+        exempt_controls: >-
+          {{ curated +
+             (scan.exempt_candidates
+              | rejectattr('control_id', 'in', curated_ids)
+              | list) }}
+      vars:
+        curated: "{{ curated_exempt_controls.get(platform, []) }}"
+        curated_ids: "{{ curated | map(attribute='control_id') | list }}"
+
     - name: Read build output if present
       ansible.builtin.slurp:
         src: "{{ build_output_file }}"
@@ -61,7 +75,7 @@
           min_hardening_score: "{{ min_hardening_score }}"
           required_packages: "{{ required_packages }}"
           denied_packages: "{{ denied_packages }}"
-          exempt_controls: "{{ scan.exempt_candidates }}"
+          exempt_controls: "{{ exempt_controls }}"
 
     - name: Write data.json
       ansible.builtin.copy:
@@ -70,12 +84,15 @@
         mode: "0644"
 
     - name: Show scan summary
+      vars:
+        curated_count: "{{ curated_exempt_controls.get(platform, []) | length }}"
       ansible.builtin.debug:
         msg:
           - "Score {{ scan.hardening_score }} (gate: {{ min_hardening_score }})"
           - "Pass: {{ scan.passing }} | Fail: {{ scan.failing }}"
           - "N/A: {{ scan.notapplicable }} | Not-checked: {{ scan.notchecked }}"
           - "Failures by XCCDF severity: {{ scan.failures_by_severity }}"
-          - "Exempt candidates: {{ scan.exempt_candidates | length }}"
+          - "Exempt controls: {{ exempt_controls | length }} total"
+          - "  ({{ scan.exempt_candidates | length }} auto-emitted, {{ curated_count }} curated)"
           - "Approved base images: {{ approved_base_images }}"
           - "Wrote {{ data_json_file }}"

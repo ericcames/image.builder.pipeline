@@ -109,15 +109,42 @@ All credentials are resolved at runtime via environment variables — never stor
 
 ## 5. Exempt Controls Design
 
-AWS-specific exceptions (known Image Builder P3 failures) are enumerated by running
-the pipeline once per platform and recording the failing control IDs. These are stored
-in `data.json` under `exempt_controls` with documented reasons.
+CIS rules that fail at scan time fall into two categories:
 
-This list is managed here rather than hardcoded in OPA policy — a data file update
-is sufficient when exceptions change, no policy code review required.
+1. **Real hardening gaps** — packages missing, services not enabled, config not applied.
+   Fixed in `build_cis_image.yml` blueprint customizations so the rule passes on rebuild.
+2. **Structural mismatches with the deployment environment** — rules that can't apply
+   on AWS regardless of how the image is built (no console boot recovery, no separate
+   partitions, SSH-key-only auth model). Treated as exempt with documented reasons.
 
-**Initial enumeration:** run Phase 1 pipeline, capture XCCDF results, identify
-failing controls that are AWS-deployment-specific (not hardening failures).
+Category 2 entries live in `playbooks/vars/exempt_controls.yml`, keyed by platform, and
+get merged into `data.json` under `exempt_controls` at policy-data generation time.
+This list is managed in the pipeline repo rather than hardcoded in OPA policy — a data
+file update is sufficient when exceptions change; no policy code review required.
+
+The parser (`playbooks/filter_plugins/xccdf.py`) also auto-emits low-severity (XCCDF
+`low` → policy P3) scan failures as exempt candidates. Curated entries take precedence
+on duplicate `control_id` so the canonical reason is preserved.
+
+### 5.1 Severity mapping
+
+Policy severity maps from XCCDF severity:
+
+| XCCDF severity | Policy severity | Notes |
+|---|---|---|
+| high | P1 | Highest gating impact |
+| medium | P2 | |
+| low | P3 | Auto-emitted as exempt by default |
+
+### 5.2 Canonical curated entries (RHEL 9, AWS)
+
+| Control | XCCDF | Policy | Reason |
+|---|---|---|---|
+| `grub2_password` | high | P1 | Cloud VMs don't expose the console boot path that grub2 password protects. Baking a password into the AMI is ineffective (no console-recovery path on AWS) and a credential-leak risk (password stored in the image artifact). |
+| `ensure_root_password_configured` | medium | P2 | RHEL on AWS uses `ec2-user` with SSH key authentication; root password is not part of the security model. Setting one provides no defense against an attacker who can already reach the instance and creates a credential leak risk in the AMI artifact. |
+| `partition_for_tmp` | low | P3 | AWS EBS-backed AMIs use a single root partition that cloud-init expands at first boot. A separate `/tmp` partition is incompatible with that launch flow. |
+
+Source: `playbooks/vars/exempt_controls.yml`. Update both files together when the list changes.
 
 ---
 
