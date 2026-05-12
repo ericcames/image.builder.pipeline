@@ -39,10 +39,10 @@ If a change works for one consumer but breaks the other, it doesn't ship.
 - **One concern per PR** — group by shared root cause, not item count.
 - **ansible.platform over ansible.controller** wherever possible. `ansible.controller` is legacy.
 
-## Current state (2026-05-11)
+## Current state (2026-05-12)
 
-- Phase 1 (RHEL 9 CIS L1) — **end-to-end run completed 2026-05-11** (AMI `ami-068ff0ada2adefba5`, score 94.94 vs gate 95). Open follow-ups: #4 token-expiration in poll, #5 t3.micro OOM, #6 cleanup-on-failure, #7 score-vs-gate tuning
-- Phase 1.5 (DC1 integration) — not started; pipeline doesn't yet apply naming/tagging contract
+- Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
+- Phase 1.5 (DC1 integration) — next up; pipeline doesn't yet apply naming/tagging contract from `docs/design.md` §9
 - Phase 2 (CIS L2, RHEL 8) — not started
 
 See `ROADMAP.md` for the full plan.
@@ -53,8 +53,13 @@ See `ROADMAP.md` for the full plan.
 |---|---|
 | `playbooks/build_cis_image.yml` | Image Builder API integration, AMI compose |
 | `playbooks/deploy_and_scan.yml` | EC2 deploy, SCAP result extraction |
-| `playbooks/generate_policy_data.yml` | XCCDF → `data.json` (skeleton) |
-| `docs/design.md` | Full design — §6 OPA consumer, §9 DC1 consumer + AMI contract |
+| `playbooks/generate_policy_data.yml` | XCCDF → `data.json`; merges curated + auto-emitted exempts |
+| `playbooks/scripts/wait_for_compose.py` | Token-refreshing Image Builder poll helper (#4) |
+| `playbooks/tasks/cleanup_aws.yml` | AWS teardown, included from scan play's `always:` (#6) |
+| `playbooks/vars/exempt_controls.yml` | Curated exempt entries with canonical reasons |
+| `playbooks/filter_plugins/xccdf.py` | XCCDF parser; emits score, severity breakdown, P3 candidates |
+| `docs/design.md` | Full design — §5 exempt controls, §6 OPA consumer, §9 DC1 consumer + AMI contract |
+| `docs/cis-l1-rhel9-status.md` | Latest validated compliance snapshot |
 | `inventories/sample/` | Template inventory; copy to `inventories/<customer>-<platform>/` |
 | `output/<platform>/` | Per-platform outputs: `build_output.json`, `scap/`, `data.json` |
 
