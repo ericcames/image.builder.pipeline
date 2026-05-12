@@ -135,6 +135,7 @@ Policy severity maps from XCCDF severity:
 | high | P1 | Highest gating impact |
 | medium | P2 | |
 | low | P3 | Auto-emitted as exempt by default |
+| unknown / info | P3 | SSG didn't assign a severity — treated as lowest gating weight |
 
 ### 5.2 Canonical curated entries (RHEL 9, AWS)
 
@@ -143,6 +144,8 @@ Policy severity maps from XCCDF severity:
 | `grub2_password` | high | P1 | Cloud VMs don't expose the console boot path that grub2 password protects. Baking a password into the AMI is ineffective (no console-recovery path on AWS) and a credential-leak risk (password stored in the image artifact). |
 | `ensure_root_password_configured` | medium | P2 | RHEL on AWS uses `ec2-user` with SSH key authentication; root password is not part of the security model. Setting one provides no defense against an attacker who can already reach the instance and creates a credential leak risk in the AMI artifact. |
 | `partition_for_tmp` | low | P3 | AWS EBS-backed AMIs use a single root partition that cloud-init expands at first boot. A separate `/tmp` partition is incompatible with that launch flow. |
+| `file_permission_user_init_files` | medium | P2 | Rule applies to user home directories on a deployed system. At AMI build time no users exist yet — `ec2-user` is created by cloud-init at first boot, not in the image artifact. Hardening user init file permissions is a post-deploy responsibility. |
+| `sshd_limit_user_access` | unknown | P3 | SSH access policy (`AllowUsers`/`AllowGroups`/etc.) is a consumer decision: the pipeline produces a base OS image and does not know which users or service accounts downstream setup will require SSH access. Baking `AllowUsers ec2-user` would risk locking out legitimate downstream users. |
 
 Source: `playbooks/vars/exempt_controls.yml`. Update both files together when the list changes.
 

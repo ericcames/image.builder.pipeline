@@ -38,3 +38,22 @@ curated_exempt_controls:
         expands at first boot. A separate /tmp partition is incompatible
         with that launch flow.
       applies_to: [aws_ami]
+
+    - control_id: xccdf_org.ssgproject.content_rule_file_permission_user_init_files
+      severity: P2
+      reason: >-
+        Rule applies to user home directories on a deployed system. At AMI
+        build time no users exist yet — ec2-user is created by cloud-init
+        at first boot, not in the image artifact. Hardening user init file
+        permissions is a post-deploy responsibility for the consumer.
+      applies_to: [aws_ami]
+
+    - control_id: xccdf_org.ssgproject.content_rule_sshd_limit_user_access
+      severity: P3
+      reason: >-
+        SSH access policy (AllowUsers/AllowGroups/etc.) is a consumer
+        decision: the pipeline produces a base OS image and does not know
+        which users or service accounts downstream setup (e.g., DC1's
+        Satellite installer) will require SSH access. Baking AllowUsers
+        ec2-user would risk locking out legitimate downstream users.
+      applies_to: [aws_ami]
