@@ -68,11 +68,12 @@ Image Builder runs OpenSCAP at build time and writes results to
 
 ### Stage 3 — Generate Policy Data (`generate_policy_data.yml`)
 
-Parses the XCCDF/ARF results and produces:
+Parses the XCCDF/ARF results, merges scan-derived data with curated policy
+inputs, and produces `output/<platform>/data.json`:
 
 ```json
 {
-  "approved_base_images": [],
+  "approved_base_images": ["ami-0228edcda0bbb6c3a"],
   "approved_builders": ["imagebuilder", "packer", "ansible-aac"],
   "approved_signing_keys": [],
   "max_image_age_days": 90,
@@ -81,16 +82,24 @@ Parses the XCCDF/ARF results and produces:
   "denied_packages": ["telnet", "rsh", "xinetd"],
   "exempt_controls": [
     {
-      "control_id": "<populated from scan>",
-      "severity": "P3",
-      "reason": "<populated from scan — AWS-specific exception>",
+      "control_id": "xccdf_org.ssgproject.content_rule_grub2_password",
+      "severity": "P1",
+      "reason": "Cloud VMs do not expose the console boot path that a grub2 password protects ...",
       "applies_to": ["aws_ami"]
     }
   ]
 }
 ```
 
-Output is written to `output/<platform>/data.json`.
+- `approved_base_images` is populated from `output/<platform>/build_output.json`
+  (the AMI ID minted by Stage 1).
+- `exempt_controls` is a merge of two sources: curated entries from
+  `playbooks/vars/exempt_controls.yml` (canonical reasons; see §5) plus any
+  low-severity scan failures auto-emitted by the XCCDF parser. Curated entries
+  win on duplicate `control_id` so canonical reasons replace auto-emitted
+  placeholders.
+- The remaining fields (`approved_builders`, thresholds, package lists) are
+  static policy inputs defined in `playbooks/generate_policy_data.yml`.
 
 ---
 

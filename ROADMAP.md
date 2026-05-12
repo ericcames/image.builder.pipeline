@@ -10,9 +10,11 @@ and serving as the source of hardened AMIs for
 
 ---
 
-## Phase 1 — RHEL 9 CIS L1 (Active)
+## Phase 1 — RHEL 9 CIS L1 (Complete)
 
 **Target:** End-to-end build → scan → `data.json` for RHEL 9 CIS Level 1 Server.
+
+Validated 2026-05-12. Current state in [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md).
 
 | Task | Status |
 |------|--------|
@@ -22,8 +24,10 @@ and serving as the source of hardened AMIs for
 | `collections/requirements.yml` and pinned `amazon.aws` | Complete |
 | OpenSCAP XCCDF result parser | Complete |
 | `data.json` generator for `golden_images/os/linux/rhel_9/` | Complete |
-| Enumerate and document AWS-specific exempt controls (P3) | Complete (auto-emitted from low-severity fails; reasons reviewed on first real scan) |
-| End-to-end smoke test: build → scan → generate | Complete (2026-05-11; OPA-consumes side tracked separately) |
+| Enumerate and document AWS-specific exempt controls | Complete (5 curated entries with documented reasons in `playbooks/vars/exempt_controls.yml`; full text in design.md §5.2) |
+| Image Builder customizations to close packaging gaps | Complete (#14 — `aide`, `firewalld`, `systemd-journal-remote` added) |
+| Pipeline hardening (token refresh, t3.medium default, cleanup-on-failure) | Complete (#9) |
+| End-to-end smoke test: build → scan → generate | Complete (2026-05-12; score 98.07 / gate 95 — OPA-consumes side tracked separately) |
 
 ---
 
