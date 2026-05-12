@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `playbooks/vars/exempt_controls.yml` — curated exempt list with canonical reasons for AWS-inherent CIS rules (`grub2_password`, `ensure_root_password_configured`, `partition_for_tmp`). Merged into `data.json` at generate time; curated entries take precedence over parser-auto-emitted candidates. Closes #11
 - `build_cis_image.yml` Image Builder customizations.packages list — installs `aide`, `firewalld`, `systemd-journal-remote` at build time. First experiment toward closing the CIS L1 packaging gaps tracked in #10
 - Two more curated exempts (closes #12): `file_permission_user_init_files` (P2; rule targets deployed-system user homes, not the image artifact) and `sshd_limit_user_access` (P3; SSH access policy is a consumer decision)
+- `docs/cis-l1-rhel9-status.md` — snapshot of the latest validated compliance state (AMI, score, exempt rules, reproduction steps, validation history). Linked from README's platform table
 - Initial repository structure, MIT License, Contributor Covenant Code of Conduct
 - README with architecture overview and quick start
 - ROADMAP — Phase 1 (RHEL 9 L1), Phase 1.5 (DC1 integration), Phase 2 (L2 / RHEL 8), Phase 3 (Windows), Phase 4 (other platforms)

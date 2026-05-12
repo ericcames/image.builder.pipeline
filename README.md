@@ -34,12 +34,14 @@ Red Hat Image Builder (console.redhat.com)
 
 | Platform | CIS Benchmark | Status |
 |----------|--------------|--------|
-| RHEL 9 | CIS Level 1 Server | Phase 1 — Active |
+| RHEL 9 | CIS Level 1 Server | **Phase 1 — Complete** (score 98.07 / 95 gate — see [status](docs/cis-l1-rhel9-status.md)) |
 | RHEL 8 | CIS Level 1 Server | Phase 2 |
 | RHEL 10 | CIS Level 1 Server | Phase 2 — pending benchmark |
 | Windows Server 2022 | CIS Level 1 | Phase 3 |
 
-See [ROADMAP.md](ROADMAP.md) for full platform schedule.
+See [ROADMAP.md](ROADMAP.md) for full platform schedule and
+[docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
+latest RHEL 9 compliance snapshot.
 
 ## Prerequisites
 
