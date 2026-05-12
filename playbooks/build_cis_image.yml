@@ -132,6 +132,28 @@
         ami_id: "{{ (compose_result.stdout | from_json).ami_id }}"
         ami_region: "{{ (compose_result.stdout | from_json).region | default('us-east-1') }}"
 
+    # Single timestamp shared by tags and build_output.json so the values match.
+    - name: Compute build timestamp facts
+      ansible.builtin.set_fact:
+        build_date_iso: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        build_date_short: "{{ lookup('pipe', 'date -u +%Y%m%d-%H%M') }}"
+
+    # Tag contract with downstream consumers (DC1 et al.) — see docs/design.md §9.
+    # Tag-based discovery rather than AMI-name-based; this avoids needing to
+    # override the Image Builder-assigned AMI name and gives consumers richer
+    # filter dimensions (Pipeline + OS + CIS-Level).
+    - name: Apply CIS pipeline tags to AMI
+      amazon.aws.ec2_tag:
+        region: "{{ ami_region }}"
+        resource: "{{ ami_id }}"
+        tags:
+          Pipeline: image-builder-pipeline
+          OS: "{{ target_platform }}"
+          CIS-Level: L1
+          BuildDate: "{{ build_date_iso }}"
+          ComposeID: "{{ compose_id }}"
+          Name: "{{ target_platform }}-cis-l1-{{ build_date_short }}"
+
     - name: Save build output to file
       ansible.builtin.copy:
         content: "{{ build_output | to_nice_json }}"
@@ -144,7 +166,7 @@
           region: "{{ ami_region }}"
           platform: "{{ target_platform }}"
           cis_profile: "{{ cis_profile }}"
-          build_date: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+          build_date: "{{ build_date_iso }}"
 
     - name: Show result
       ansible.builtin.debug:

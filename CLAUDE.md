@@ -22,10 +22,10 @@ If a change works for one consumer but breaks the other, it doesn't ship.
 - **Same AWS account as DC1.** No cross-account AMI sharing logic.
 - **Phase order is enforced.** Don't add L2 until L1 is end-to-end working. Don't add RHEL 8 until RHEL 9 is solid. Skipping phases creates compounding bugs.
 
-### AMI naming — this is the contract with DC1
-- **Name pattern:** `{os}-cis-l{level}-{YYYYMMDD-HHMM}` — example `rhel9-cis-l1-20260511-1430`
-- **Required tags:** `Pipeline=image-builder-pipeline`, `OS=<os>`, `CIS-Level=L<n>`, `BuildDate=<ISO>`, `ComposeID=<uuid>`
-- Breaking the name pattern breaks DC1's `roles/infrastructure/files/variables.tf` filter — treat it as a versioned cross-repo contract.
+### AMI tagging — this is the contract with DC1
+- **Tag-based discovery, not name-based.** Consumers filter on `Pipeline` + `OS` + `CIS-Level` tags.
+- **Required tags:** `Pipeline=image-builder-pipeline`, `OS=<os>`, `CIS-Level=L<n>`, `BuildDate=<ISO>`, `ComposeID=<uuid>`, `Name=<os>-cis-l<n>-<YYYYMMDD-HHMM>` (Name is human-readable; not a discovery key)
+- Breaking the tag contract breaks DC1's `data "aws_ami"` filter — treat it as a versioned cross-repo contract.
 
 ### CIS levels
 - **Satellite host OS:** CIS L1 only. L2 fights Satellite's installer (firewall, services on ports 80/443/5647/8000/8140/9090).
@@ -42,7 +42,7 @@ If a change works for one consumer but breaks the other, it doesn't ship.
 ## Current state (2026-05-12)
 
 - Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
-- Phase 1.5 (DC1 integration) — next up; pipeline doesn't yet apply naming/tagging contract from `docs/design.md` §9
+- Phase 1.5 (DC1 integration) — tagging contract applied pipeline-side; DC1's `data.tf.j2` tag-filter swap is the remaining work
 - Phase 2 (CIS L2, RHEL 8) — not started
 
 See `ROADMAP.md` for the full plan.
