@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- GitHub community health files: `CONTRIBUTING.md`, `.github/SECURITY.md`, `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/pull_request_template.md` — tailored to pipeline context, ROADMAP phases, and the two-consumer contract
+
+
 - `playbooks/vars/exempt_controls.yml` — curated exempt list with canonical reasons for AWS-inherent CIS rules (`grub2_password`, `ensure_root_password_configured`, `partition_for_tmp`). Merged into `data.json` at generate time; curated entries take precedence over parser-auto-emitted candidates. Closes #11
 - `build_cis_image.yml` Image Builder customizations.packages list — installs `aide`, `firewalld`, `systemd-journal-remote` at build time. First experiment toward closing the CIS L1 packaging gaps tracked in #10
 - Two more curated exempts (closes #12): `file_permission_user_init_files` (P2; rule targets deployed-system user homes, not the image artifact) and `sshd_limit_user_access` (P3; SSH access policy is a consumer decision)
