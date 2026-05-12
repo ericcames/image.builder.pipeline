@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- `playbooks/vars/exempt_controls.yml` — curated exempt list with canonical reasons for AWS-inherent CIS rules (`grub2_password`, `ensure_root_password_configured`, `partition_for_tmp`). Merged into `data.json` at generate time; curated entries take precedence over parser-auto-emitted candidates. Closes #11
 - Initial repository structure, MIT License, Contributor Covenant Code of Conduct
 - README with architecture overview and quick start
 - ROADMAP — Phase 1 (RHEL 9 L1), Phase 1.5 (DC1 integration), Phase 2 (L2 / RHEL 8), Phase 3 (Windows), Phase 4 (other platforms)
