@@ -12,6 +12,7 @@ docs/aws-environment.md
 collections/*
 !collections/requirements.yml
 .cache/
+.ansible/
 
 # Python
 __pycache__/
