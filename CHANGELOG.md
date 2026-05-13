@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `docs/design.md` §9.1 and `ROADMAP.md` AMI ownership contract — Red Hat Image Builder is a **hosted service** that builds AMIs in its own service account (`463606842039`) and shares them with the consumer account via the API's `share_with_accounts` field. The consumer never owns the AMI, only receives launch permission. Previous text claimed "pipeline and DC1 share one AWS account; no cross-account sharing" and prescribed `owners = ["self"]` for the DC1 data source — both wrong. Surfaced when [demo.datacenter PR #14](https://github.com/ericcames/demo.datacenter/pull/14) ran end-to-end and `terraform plan` returned "no results" against the shared AMI.
+
 ### Added
 - GitHub community health files: `CONTRIBUTING.md`, `.github/SECURITY.md`, `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/pull_request_template.md` — tailored to pipeline context, ROADMAP phases, and the two-consumer contract
 
