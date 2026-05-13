@@ -229,7 +229,7 @@ format.
 
 ```hcl
 data "aws_ami" "rhel9_cis_l1" {
-  owners      = ["self"]
+  owners      = ["463606842039"]
   most_recent = true
 
   filter {
@@ -247,9 +247,16 @@ data "aws_ami" "rhel9_cis_l1" {
 }
 ```
 
-`owners = ["self"]` reflects that pipeline and DC1 share one AWS account; no
-cross-account sharing. `most_recent = true` picks the freshest matching build,
-which is also reflected in the `BuildDate` tag for explicit age checks.
+`owners = ["463606842039"]` reflects how Red Hat Image Builder actually
+delivers AMIs: it is a **hosted service** that builds in Red Hat's own AWS
+service account (`463606842039`) and shares the result with the consumer
+account named in the API's `share_with_accounts` field. The consumer never
+owns the AMI — only has launch permission for it — so `owners = ["self"]`
+in the data source would not match. Consumers must filter on the Image
+Builder service account ID instead.
+
+`most_recent = true` picks the freshest matching build, which is also
+reflected in the `BuildDate` tag for explicit age checks.
 
 ### 9.2 AMI tagging contract
 

@@ -39,7 +39,7 @@ marketplace AMIs. See `docs/design.md` §9 for the contract.
 | Task | Status |
 |------|--------|
 | Implement AMI tagging contract in `build_cis_image.yml` per design.md §9.2 | Complete (this PR — 6 tags: `Pipeline`, `OS`, `CIS-Level`, `BuildDate`, `ComposeID`, `Name`) |
-| Update DC1 `data.tf.j2` — owner from Red Hat account to `self`; switch to tag-based `aws_ami` filter (Pipeline + OS + CIS-Level) | Pending |
+| Update DC1 `data.tf.j2` — owner from Red Hat marketplace (`309956199498`) to Image Builder service account (`463606842039`); switch to tag-based `aws_ami` filter (Pipeline + OS + CIS-Level) | Pending merge of [demo.datacenter PR #14](https://github.com/ericcames/demo.datacenter/pull/14) |
 | Smoke test: `satellite_setup.yml` installs cleanly on tagged pipeline AMI | Pending |
 | Document any CIS-L1-vs-Satellite exempt controls discovered | Pending |
 | Roll AMI consumption to all RHEL 9 DC1 nodes | Pending |
