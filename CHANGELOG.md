@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `wait_for_compose.py` handles guest-image compose results (download URL) in addition to AMI compose results — backward-compatible
 - `docs/design.md` §10 — containerDisk contract for OpenShift Virtualization: distribution model, OCI labels, credential pattern, compliance evidence strategy. Parallel to §9's AMI contract
 - `ROADMAP.md` Phase 1.7 — RHEL 9 CIS L1 containerDisk
+- `.claude/skills/rhel9-containerdisk/SKILL.md` — preflight, API validation, run, verify, and troubleshooting for the RHEL 9 containerDisk build
 - `.claude/skills/windows-image-build/SKILL.md` — the Windows build had no skill, so its preflight existed only as asserts inside the playbook, discovered one failure at a time. Covers acquiring the media, the run, verification that asks the cluster rather than trusting the recap, and the teardown. Closes #30
 - `playbooks/scripts/wim_images.py` — prints the image names inside a `.wim` by parsing the WIM header's XML resource. **`windows_image_name` must match one of those names exactly**; get it wrong and Windows Setup stops on the edition-selection screen, which reads as a hang because there is no console output to explain it.
 - `README.md` now lists the four skills. There was no skills section at all, despite three already existing.

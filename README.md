@@ -38,7 +38,7 @@ Red Hat Image Builder (console.redhat.com)
 | Platform | Output | CIS Benchmark | Status |
 |----------|--------|--------------|--------|
 | RHEL 9 | AMI | CIS Level 1 Server | **Phase 1 — Complete** (score 98.07 / 95 gate — see [status](docs/cis-l1-rhel9-status.md)) |
-| RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Smoke test pending** |
+| RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Complete** |
 | RHEL 8 | AMI | CIS Level 1 Server | Phase 2 |
 | RHEL 10 | AMI | CIS Level 1 Server | Phase 2 — pending benchmark |
 | Windows Server 2022 | containerDisk | CIS Level 1 | Phase 3 |
@@ -56,6 +56,7 @@ Workflows in this repo are packaged as skills under `.claude/skills/`.
 | `first-time` | Validates every local prerequisite on a new machine |
 | `collections-sync` | Pins, installs and verifies the Ansible collections |
 | `dev-workflow` | The mandatory issue → branch → PR → merge cycle |
+| `rhel9-containerdisk` | Builds the RHEL 9 CIS L1 containerDisk (Phase 1.7) |
 | `windows-image-build` | Builds the Windows Server 2022 containerDisk (Phase 3) |
 
 ## Prerequisites
