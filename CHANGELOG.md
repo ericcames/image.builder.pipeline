@@ -84,6 +84,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Phase 1 end-to-end run completed 2026-05-11 — first real RHEL 9 CIS L1 AMI through the full pipeline. Score 94.94 vs gate 95; follow-ups tracked in #4, #5, #6, #7
 
 ### Fixed
+- **Teardown of a wedged build took an hour, and a build started behind it silently reused the old VM** (#54). Two defects, one sequence, both hit while rebuilding for #50.
+
+  **The hour:** the build VM inherited `terminationGracePeriodSeconds: 3600` from KubeVirt's Windows preference. Measured — a launcher pod deleted at 16:41 carried `deletionTimestamp` **17:41**. A guest wedged mid-Setup never shuts down cleanly, so the pod waits out the entire grace period with the namespace `Terminating` behind it. An hour is right for a machine someone cares about and wrong for a throwaway that exists to be rebuilt; now 60 seconds via `build_termination_grace_seconds`, which still lets a healthy guest flush and halt.
+
+  **The quiet part:** the build then ran anyway, against the terminating namespace. Kubernetes refuses to *create* objects there — but **every object the build needs already existed from the previous run**, so `state: present` was a no-op patch and nothing errored. The playbook waited for the *previous, looping* VM to power off, having reported it had created a new one. It looked completely normal. There is now an assert that refuses to build into a `Terminating` namespace.
+
+- **The safe way to clear a wedged guest is `virtctl stop <vm> --force --grace-period=0`**, which asks virt-handler to destroy the domain through the KubeVirt API. Used here, it cleared in about five minutes what had fifty left to run. It is **not** the same as `oc delete pod --force`, which wedges virt-handler so it then refuses to start any new domain with nothing surfaced anywhere. The new failure message names the safe path and warns off the other.
+
+- **Teardown staying asynchronous is deliberate** and was not changed. `wait: false` is right — a namespace with PVCs can take many minutes and nothing in the teardown path needs to watch it go. The fix belongs in the *build* refusing to start, not in the teardown blocking.
+
 - **Removing the keypress made the install CD boot unconditionally, so Windows Setup restarted forever** (#50). The first build after #40 ran four hours with the progress bar moving and never finished. It was not slow — progress **went backwards**: 51% at 12:36, 82% at 14:08, **49% at 16:33**. That figure is monotonic within a run, so a decrease means a new run.
 
   Windows Setup reboots partway through every installation. The firmware re-runs the boot order, and with `installcd bootOrder=1` and no prompt left to time out, it booted the CD again and Setup began from zero. `virt-launcher` showed one continuous domain the whole time, so nothing above the guest could see it.
