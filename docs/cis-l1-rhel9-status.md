@@ -67,6 +67,7 @@ See [design.md §6](design.md) and [§9](design.md) for the full consumer contra
 
 | Date | Score | Pass/Fail | Notes |
 |---|---|---|---|
+| 2026-09-05 | — | — | containerDisk path: `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. Same CIS L1 profile and packages as the AMI. Image Builder applies OpenSCAP at build time. No independent SCAP scan (deferred — see design.md §10.5). Monthly scheduled rebuild via GitHub Actions (#48). |
 | 2026-05-12 | **98.07** | 254/5 | Cat A packages added (#14); Cat B (#13) + Cat C (#15) exempts curated. All 13 original fails classified. |
 | 2026-05-11 | 94.94 | 244/13 | Baseline first real end-to-end run. 10 medium + 1 high + 1 low + 1 unknown failing; only `partition_for_tmp` auto-exempted with placeholder reason. |
 
@@ -78,5 +79,6 @@ Refresh this document when:
 - The curated exempt list changes (update Currently failing rules table)
 - The Image Builder customizations change in a way that affects which rules pass
 
-Validation cadence: rebuild and re-scan periodically to catch CIS benchmark
-updates, RHEL base-image refreshes, and SSG remediation drift.
+Validation cadence: the containerDisk path now rebuilds monthly via GitHub
+Actions (#48). The AMI scan path should be re-validated periodically to catch
+CIS benchmark updates, RHEL base-image refreshes, and SSG remediation drift.

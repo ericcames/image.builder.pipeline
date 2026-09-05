@@ -41,19 +41,20 @@ If a change works for one consumer but breaks another, it doesn't ship.
 - **One concern per PR** — group by shared root cause, not item count.
 - **ansible.platform over ansible.controller** wherever possible. `ansible.controller` is legacy.
 
-## Current state (2026-09-04)
+## Current state (2026-09-05)
 
 - Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
 - Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
-- Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. See `docs/design.md` §10 for the containerDisk contract.
+- Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. Monthly scheduled rebuild via GitHub Actions (`containerdisk-rebuild.yml`). See `docs/design.md` §10 for the containerDisk contract.
 - Phase 2 (CIS L2, RHEL 8) — not started
-- Phase 3 (Windows containerDisk) — direction set: CIS-hardened Windows Server 2022 as containerDisk on Quay.io (#21). Producer work is #24, **in this repo** (transferred from `sales.demos#193`); consumer is `sales.demos#3`, already shipped.
+- Phase 3 (Windows containerDisk) — **In progress.** Unattended build playbook shipped (`build_windows_image.yml`, #24); ISO re-master for no-keypress boot done (#40); skill documented. CIS hardening, sysprep, and Quay publish still pending. Consumer is `sales.demos#3`, already shipped.
 
 See `ROADMAP.md` for the full plan.
 
 ## Workflow
 
-- **`main` is protected** — PRs always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass.
+- **`main` is protected** — PRs always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass via `.github/workflows/lint.yml`.
+- **Scheduled builds** — `.github/workflows/containerdisk-rebuild.yml` rebuilds the RHEL 9 containerDisk monthly (1st of month, 06:00 UTC). Manual trigger via `workflow_dispatch`. See `docs/operations.md` for the runbook.
 - **Branch naming:** `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`)
 - **Working tree is shared by multiple Claude sessions.** Re-run `git branch --show-current` immediately before `git add` and `git commit`. Prefer `git add <explicit paths>` over `git add -A`. Use `gh pr create --head <branch>` rather than relying on checkout state.
 - **Standing merge authorization:** Claude may merge green PRs without asking.
@@ -83,7 +84,15 @@ See `ROADMAP.md` for the full plan.
 | `playbooks/vars/exempt_controls.yml` | Curated exempt entries with canonical reasons |
 | `playbooks/filter_plugins/xccdf.py` | XCCDF parser; emits score, severity breakdown, P3 candidates |
 | `docs/design.md` | Full design — §5 exempt controls, §6 OPA consumer, §9 AMI contract, §10 containerDisk contract |
+| `playbooks/build_windows_image.yml` | Windows Server 2022 unattended build for Phase 3 containerDisk |
+| `playbooks/templates/autounattend.xml.j2` | Windows unattended install answer file template |
+| `playbooks/scripts/remaster_iso.sh` | Windows ISO no-keypress boot patch (El Torito byte-exact overwrite) |
+| `playbooks/scripts/fetch_iso.sh` | Windows ISO fetch helper for the re-master pod |
+| `playbooks/scripts/wim_images.py` | WIM image name parser for `windows_image_name` validation |
 | `docs/cis-l1-rhel9-status.md` | Latest validated compliance snapshot |
+| `docs/operations.md` | Operational runbook — manual rebuild, secret rotation, troubleshooting |
+| `.github/workflows/lint.yml` | CI lint gate (yamllint + ansible-lint) on push/PR to main |
+| `.github/workflows/containerdisk-rebuild.yml` | Monthly scheduled RHEL 9 containerDisk rebuild + manual dispatch |
 | `inventories/sample/` | Template inventory; copy to `inventories/<customer>-<platform>/` |
 | `output/<platform>/` | Per-platform outputs: `build_output.json`, `scap/`, `data.json` |
 

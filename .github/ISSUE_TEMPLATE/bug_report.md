@@ -24,7 +24,7 @@ labels: bug
 |-------|-------|
 | RHEL version | 9 / 8 |
 | CIS level | L1 / L2 |
-| Playbook | `build_cis_image.yml` / `deploy_and_scan.yml` / `generate_policy_data.yml` |
+| Playbook | `build_cis_image.yml` / `deploy_and_scan.yml` / `generate_policy_data.yml` / `build_cis_containerdisk.yml` / `build_windows_image.yml` |
 | Compose ID | (if known) |
 | Consumer affected | `rego_policy_libraries` / `sales.demos` / both |
 

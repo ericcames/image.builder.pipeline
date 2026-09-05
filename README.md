@@ -6,7 +6,7 @@ scanning with OpenSCAP, and generating structured policy compliance data for
 
 ## Overview
 
-This pipeline automates three stages:
+This pipeline automates four stages:
 
 1. **Build** — trigger a CIS-hardened image compose via the Red Hat Image Builder API (AMI or qcow2)
 2. **Scan** — deploy the image to AWS and extract OpenSCAP results (AMI path)
@@ -100,6 +100,18 @@ ansible-playbook playbooks/build_cis_containerdisk.yml
 
 Generated `data.json` files are written to `output/<platform>/data.json` and
 should be copied into the appropriate `golden_images/` path in `rego_policy_libraries`.
+
+## CI / Automation
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [`lint.yml`](.github/workflows/lint.yml) | Push / PR to `main` | yamllint + ansible-lint on `playbooks/` and `inventories/` |
+| [`containerdisk-rebuild.yml`](.github/workflows/containerdisk-rebuild.yml) | Monthly (1st, 06:00 UTC) + manual | Rebuilds the RHEL 9 CIS L1 containerDisk and pushes to Quay.io |
+
+The scheduled rebuild keeps the containerDisk fresh with RHEL errata and CIS
+benchmark updates without operator intervention. Trigger a manual rebuild from
+the Actions tab or via `gh workflow run "Rebuild RHEL 9 CIS containerDisk"`.
+See [docs/operations.md](docs/operations.md) for the full operational runbook.
 
 ## Related repositories
 

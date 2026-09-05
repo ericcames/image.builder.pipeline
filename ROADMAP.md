@@ -85,7 +85,7 @@ Satellite host OS stays L1. L2 is workload-node-only until L2-on-Satellite is pr
 
 ---
 
-## Phase 3 — Windows Server 2022 containerDisk ([#21](https://github.com/ericcames/image.builder.pipeline/issues/21))
+## Phase 3 — Windows Server 2022 containerDisk ([#24](https://github.com/ericcames/image.builder.pipeline/issues/24))
 
 **Target:** CIS L1 Windows Server 2022 as a containerDisk on a private Quay.io
 repo. No AWS AMI — Windows images are consumed by OpenShift Virtualization via
@@ -116,7 +116,7 @@ compliance evidence.
 | Audit-tag evidence capture | Pending |
 | sysprep, wrap as containerDisk, `podman push` to Quay | Pending |
 | `data.json` generator for `golden_images/os/windows/server_2022/` | Pending |
-| `docs/design.md` §10 — containerDisk contract (parallel to §9 for AMIs) | Pending |
+| `docs/design.md` §10 — add Windows-specific content (§10 exists for RHEL 9; Windows needs its own entries) | Pending |
 
 ---
 
@@ -136,7 +136,7 @@ Platforms from `rego_policy_libraries` design doc, prioritized by demand:
 
 ## Future Considerations
 
-- **Scheduled rebuilds (AMI pipeline)** — extend monthly cadence to AMI builds once containerDisk scheduling is proven. AAP workflow for builds requiring persistent infrastructure.
+- **Scheduled rebuilds (AMI pipeline)** — containerDisk monthly scheduling is proven and running (#48). Extend to AMI builds when ready. AAP workflow for builds requiring persistent infrastructure (AWS credentials, EC2 deploy).
 - **CVE threshold automation** — integrate with Red Hat Security API to populate `cvss_deny_threshold`.
 - **SBOM generation** — produce and sign SBOMs at build time, populate `sbom_ref`.
 - **Multi-region AMI publishing** — promote validated AMIs across AWS regions.

@@ -3,7 +3,7 @@
 **Status:** Draft
 **Maintainer:** ericcames
 **Companion repo:** [rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries)
-**Last updated:** 2026-04-22
+**Last updated:** 2026-09-05
 
 ---
 
@@ -116,6 +116,14 @@ All credentials are resolved at runtime via environment variables — never stor
 | `K8S_AUTH_HOST` | OpenShift API URL for the Windows containerDisk build (#24) |
 | `K8S_AUTH_API_KEY` | OpenShift bearer token for the same |
 | `WINDOWS_ADMIN_PASSWORD` | Local Administrator password baked into the Windows image (#24) |
+
+**CI/CD secrets** (GitHub Actions, for the scheduled containerDisk rebuild):
+
+| Secret | Maps to | Used by |
+|--------|---------|---------|
+| `RH_OFFLINE_TOKEN` | Written to `~/.ansible.cfg` on the runner | `containerdisk-rebuild.yml` — Image Builder API |
+| `QUAY_USERNAME` | `podman login` username | `containerdisk-rebuild.yml` — Quay push |
+| `QUAY_PASSWORD` | `podman login` password | `containerdisk-rebuild.yml` — Quay push |
 
 The OpenShift variables point at the **sandbox** environment. Builds never run
 against the demo environment — a 45-minute Windows install has no business on a
@@ -367,7 +375,22 @@ Per-format scanning (booting the qcow2 or extracting embedded results via
 same distribution produces the same compliance posture regardless of output
 format.
 
-### 10.6 Architecture: OS-only, same as AMIs
+### 10.6 Scheduled rebuilds
+
+The RHEL 9 containerDisk rebuilds automatically on the 1st of every month at
+06:00 UTC via `.github/workflows/containerdisk-rebuild.yml`. This keeps the
+image fresh with RHEL errata and CIS benchmark updates without operator
+intervention. Manual rebuilds can be triggered via `workflow_dispatch` from the
+GitHub Actions tab or `gh workflow run`.
+
+The workflow runs on a GitHub-hosted Ubuntu runner with podman pre-installed.
+Three repo secrets provide credentials (see §4). The same playbook
+(`build_cis_containerdisk.yml`) runs identically in CI and locally — the only
+difference is how credentials are injected.
+
+See `docs/operations.md` for the operational runbook.
+
+### 10.7 Architecture: OS-only, same as AMIs
 
 The same principle from §9.3 applies — containerDisks are OS-only. Product
 installs happen via the consumer's setup playbooks after VM provisioning.
