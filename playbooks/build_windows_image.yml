@@ -25,8 +25,15 @@
 # owns, for this repo's benefit — the one genuine cross-repo dependency, and it
 # buys nothing the API does not already give us.
 #
-# CREDENTIALS ARE ENV VARS, per docs/design.md §4. Nothing is read from
-# sales.demos' vault; this repo does not share its secrets mechanism.
+# CREDENTIALS ARE ENV VARS, per docs/design.md §4. This playbook loads no
+# vault and imports nothing from sales.demos' secrets mechanism, so it stays
+# runnable by someone who has never seen that repo.
+#
+# THAT IS THE PLAYBOOK'S CONTRACT, NOT AN ANSWER TO "WHERE DO I GET THEM".
+# All three values are maintained in sales.demos and nowhere else, and working
+# that out from scratch has cost a search of another repo's vault twice now.
+# docs/design.md §4.1 names the three files. Export them into the shell that
+# runs this; do not write them to a file here.
 #
 # BUILD ON SANDBOX, NEVER ON DEMO. A 45-minute Windows install has no business
 # on a cluster anyone might present from. The artifact is published to quay, so
