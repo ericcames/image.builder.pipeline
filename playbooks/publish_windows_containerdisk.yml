@@ -1,0 +1,515 @@
+---
+# ===========================================================================
+# publish_windows_containerdisk.yml — take the generalized Windows disk off
+# the build cluster and publish it as a containerDisk. Issue #24, PR 3 of 3.
+#
+#   export K8S_AUTH_HOST=https://api.<cluster>:6443
+#   export K8S_AUTH_API_KEY=<token>
+#   ansible-playbook -i inventories/sample/ \
+#     playbooks/publish_windows_containerdisk.yml \
+#     -e windows_eval_expires=2027-03-04
+#
+#   # and again with the push, once you are happy with what was built
+#   ansible-playbook -i inventories/sample/ \
+#     playbooks/publish_windows_containerdisk.yml \
+#     -e windows_eval_expires=2027-03-04 -e containerdisk_push=true
+#
+# THE PUSH IS A SEPARATE FLAG, following utilities/build-ee.sh as #24 asks:
+# building is cheap and repeatable, publishing is neither. A tag that already
+# exists in the registry is never overwritten.
+#
+# WHY THIS RUNS HERE AND THE BUILD RUNS ON THE CLUSTER. Measured 2026-09-05,
+# rather than assumed: the export proxy serves at ~15 MB/s and this machine
+# uploads at ~5 MB/s, so the whole round trip is well under an hour. The
+# ~1 MiB/s figure in #36 was a CLUSTER-SIDE upload limit through
+# cdi-uploadproxy, not this uplink. Building the image in a pod instead would
+# save perhaps twenty minutes and would put registry credentials in the
+# cluster — the wrong trade for this repo, which keeps exactly one copy of
+# every credential.
+#
+# WINDOWS MUST NOT BE PUBLISHED PUBLICLY. Evaluation media cannot be
+# redistributed, so this refuses to push to a public repository and checks
+# again after pushing. The check is an anonymous Quay API call and needs no
+# credential of its own.
+# ===========================================================================
+
+- name: Publish the Windows golden image as a containerDisk
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  environment:
+    K8S_AUTH_HOST: "{{ k8s_auth_host }}"
+    K8S_AUTH_API_KEY: "{{ k8s_auth_api_key }}"
+    K8S_AUTH_VERIFY_SSL: "{{ k8s_verify_ssl | string }}"
+
+  vars:
+    k8s_auth_host: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_HOST') }}"
+    k8s_auth_api_key: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_API_KEY') }}"
+    k8s_verify_ssl: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_VERIFY_SSL') | default(false, true) | bool }}"
+
+    publish_state: "present"
+    build_namespace: "image-factory-windows"
+    build_vm_name: "win2k22-build"
+    root_volume: "{{ build_vm_name }}-root"
+    export_name: "{{ build_vm_name }}-export"
+
+    # NOT win2k22-cis-l1-golden, and the distinction is permanent. What this
+    # publishes is the UNHARDENED build; PR 2 hardens it and publishes
+    # win2k22-cis-l1-golden. Tags are immutable, so a repository name claiming
+    # L1 would make that claim for ever on media that never had it.
+    quay_default: "quay.io/zigfreed/win2k22-golden"
+    quay_repo: "{{ lookup('ansible.builtin.env', 'QUAY_WINDOWS_REPO') | default(quay_default, true) }}"
+    quay_registry: "{{ quay_repo.split('/')[0] }}"
+    quay_path: "{{ quay_repo.split('/')[1:] | join('/') }}"
+
+    # THE INTERMEDIATES ARE TENS OF GIGABYTES, unlike the RHEL containerDisk's
+    # ~2 GB qcow2. Point this somewhere with room if the repo lives on a small
+    # filesystem — a tmpfs /tmp is the obvious trap, and qemu-img fails with
+    # "No space left on device" twelve minutes into a download that has already
+    # succeeded.
+    output_dir: "{{ playbook_dir }}/../output/win2k22-containerdisk"
+    required_free_gib: 40
+    containerdisk_push: false
+
+    # THE 180-DAY CLOCK HAS TO TRAVEL WITH THE ARTIFACT. A namespace label on a
+    # cluster that no longer exists helps nobody; a label on the published image
+    # is readable by whoever is about to demo from it.
+    windows_eval_expires: ""
+
+    windows_edition: "Windows Server 2022 Standard Evaluation"
+    export_wait_retries: 60
+    export_wait_delay: 10
+
+  tasks:
+    - name: Assert the requested state is valid
+      ansible.builtin.assert:
+        that:
+          - publish_state in ['present', 'absent']
+        fail_msg: "publish_state must be 'present' or 'absent'."
+
+    - name: Assert the cluster connection is available
+      ansible.builtin.assert:
+        that:
+          - k8s_auth_host | length > 0
+          - k8s_auth_api_key | length > 0
+        fail_msg: >-
+          K8S_AUTH_HOST and K8S_AUTH_API_KEY must be exported. See
+          docs/design.md §4.
+
+    - name: Remove the export
+      kubernetes.core.k8s:
+        state: absent
+        api_version: export.kubevirt.io/v1beta1
+        kind: VirtualMachineExport
+        name: "{{ export_name }}"
+        namespace: "{{ build_namespace }}"
+        wait: true
+      when: publish_state == 'absent'
+
+    - name: End the play after teardown
+      ansible.builtin.meta: end_play
+      when: publish_state == 'absent'
+
+    - name: Assert the expiry date is present
+      ansible.builtin.assert:
+        that:
+          - windows_eval_expires | length > 0
+        fail_msg: >-
+          windows_eval_expires is required. Evaluation media expires 180 days
+          from installation, and an expired guest nags and then shuts down
+          hourly — mid-demo, if the date is not on the artifact. Take it from
+          the build VM's image-factory/eval-expires label.
+
+    - name: Assert podman is installed
+      ansible.builtin.command: podman --version
+      register: podman_check
+      changed_when: false
+
+    - name: Assert we are logged in to the registry
+      # Asserted rather than scripted, exactly as build_cis_containerdisk.yml
+      # and utilities/build-ee.sh do it: this repo never handles registry
+      # credentials, it requires that the operator already has.
+      ansible.builtin.command: "podman login --get-login {{ quay_registry }}"
+      register: registry_login
+      changed_when: false
+      failed_when: registry_login.rc != 0
+
+    - name: Find the build VM
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ build_vm_name }}"
+        namespace: "{{ build_namespace }}"
+      register: build_vm
+
+    - name: Assert the VM exists and is stopped
+      # A RUNNING GUEST'S DISK IS NOT CONSISTENT, and worse, a generalized image
+      # that has been booted has consumed its generalization (#37). Stopped is
+      # both the completion signal and the only safe moment to copy the disk.
+      ansible.builtin.assert:
+        that:
+          - build_vm.resources | default([]) | length > 0
+          - build_vm.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
+        fail_msg: >-
+          {{ build_vm_name }} is not present and Stopped in
+          {{ build_namespace }}. Build it first with
+          playbooks/build_windows_image.yml — and if it is Running, let it
+          finish rather than exporting a disk mid-write.
+
+    - name: Ask the registry whether the repository is public
+      # NO CREDENTIAL NEEDED. Quay answers anonymously for public repositories
+      # and 401s for private ones or ones that do not exist, so a 200 with
+      # is_public true is the only dangerous answer and the only one this
+      # refuses on.
+      ansible.builtin.uri:
+        url: "https://quay.io/api/v1/repository/{{ quay_path }}"
+        status_code: [200, 401, 403, 404]
+      register: repo_visibility
+      changed_when: false
+      when: quay_registry == 'quay.io'
+
+    - name: Refuse to publish Windows media to a public repository
+      ansible.builtin.assert:
+        that:
+          - not (repo_visibility.status | default(401) == 200 and (repo_visibility.json.is_public | default(false)))
+        fail_msg: >-
+          {{ quay_repo }} is PUBLIC. Windows evaluation media cannot be
+          redistributed, so this will not push to it. Make the repository
+          private in Quay and run again. (For contrast,
+          quay.io/zigfreed/rhel9-cis-l1-golden is public on purpose — that
+          decision does not carry over to Windows.)
+      when: quay_registry == 'quay.io'
+
+    - name: Compute the publish timestamps
+      ansible.builtin.set_fact:
+        build_date_iso: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        build_date_short: "{{ lookup('pipe', 'date -u +%Y%m%d-%H%M') }}"
+
+    - name: Create the output directory
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Measure the free space where the disk images will land
+      ansible.builtin.command:
+        argv:
+          - df
+          - -B1
+          - --output=avail
+          - "{{ output_dir }}"
+      register: free_space
+      changed_when: false
+
+    - name: Assert there is room for the intermediates
+      # FAILS IN A SECOND RATHER THAN TWELVE MINUTES IN. The download, the
+      # sparse expand and the qcow2 all land here, and running out happens at
+      # the END — after the slow part has already succeeded.
+      ansible.builtin.assert:
+        that:
+          - (free_space.stdout_lines[1] | trim | int) > (required_free_gib | int * 1073741824)
+        fail_msg: >-
+          {{ output_dir }} has
+          {{ ((free_space.stdout_lines[1] | trim | int) / 1073741824) | round(1) }} GiB
+          free and this needs about {{ required_free_gib }} GiB — a compressed
+          download, a sparse raw expansion and a qcow2. Pass
+          -e output_dir=/somewhere/roomier, or lower required_free_gib if you
+          know the disk is small.
+
+    - name: Export, convert, build and publish
+      block:
+        - name: Create the disk export
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: export.kubevirt.io/v1beta1
+              kind: VirtualMachineExport
+              metadata:
+                name: "{{ export_name }}"
+                namespace: "{{ build_namespace }}"
+              spec:
+                source:
+                  apiGroup: kubevirt.io
+                  kind: VirtualMachine
+                  name: "{{ build_vm_name }}"
+
+        - name: Wait for the export to be ready
+          kubernetes.core.k8s_info:
+            api_version: export.kubevirt.io/v1beta1
+            kind: VirtualMachineExport
+            name: "{{ export_name }}"
+            namespace: "{{ build_namespace }}"
+          register: vm_export
+          retries: "{{ export_wait_retries }}"
+          delay: "{{ export_wait_delay }}"
+          until:
+            - vm_export.resources | default([]) | length > 0
+            - vm_export.resources[0].status.phase | default('') == 'Ready'
+
+        - name: Find the export token secret
+          # STATUS, NOT SPEC — and a manual check with virtctl will not show
+          # you this. virtctl sets spec.tokenSecretRef itself; when the export
+          # is created without one, as here, KubeVirt generates the token and
+          # reports the secret's name in STATUS. Reading spec gave an empty
+          # name and a failure with nothing useful in it.
+          ansible.builtin.set_fact:
+            export_token_secret: >-
+              {{ vm_export.resources[0].status.tokenSecretRef
+                 | default(vm_export.resources[0].spec.tokenSecretRef | default(''), true) }}
+
+        - name: Assert the export published a token secret
+          ansible.builtin.assert:
+            that:
+              - export_token_secret | length > 0
+            fail_msg: >-
+              The export {{ export_name }} is Ready but names no token secret in
+              status.tokenSecretRef or spec.tokenSecretRef. Without it the disk
+              cannot be downloaded.
+
+        - name: Read the export token
+          # no_log because the result carries the token itself. The assert
+          # above exists precisely because a failure HERE is censored and
+          # tells you nothing — that cost a run.
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Secret
+            name: "{{ export_token_secret }}"
+            namespace: "{{ build_namespace }}"
+          register: export_secret
+          no_log: true
+
+        - name: Assert the token secret was readable
+          ansible.builtin.assert:
+            that:
+              - export_secret.resources | default([]) | length > 0
+              - (export_secret.resources[0].data.token | default('')) | length > 0
+            fail_msg: >-
+              Secret {{ export_token_secret }} in {{ build_namespace }} has no
+              'token' key, or could not be read.
+
+        - name: Select the ROOT volume's gzip URL
+          # THE EXPORT OFFERS EVERY VOLUME THE VM HAD, the install ISO included.
+          # Taking the first one would publish a Windows installer as though it
+          # were a golden image, and it would look plausible right up until a
+          # consumer booted it.
+          ansible.builtin.set_fact:
+            export_url: >-
+              {{ (vm_export.resources[0].status.links.external.volumes
+                  | selectattr('name', 'equalto', root_volume) | first).formats
+                 | selectattr('format', 'equalto', 'gzip') | map(attribute='url') | first }}
+            export_token: "{{ export_secret.resources[0].data.token | b64decode }}"
+          no_log: true
+
+        - name: Report which volume is being exported
+          ansible.builtin.debug:
+            msg: "Exporting volume {{ root_volume }} as gzip"
+
+        - name: Download the compressed disk
+          # gzip, not raw: the PVC is 60Gi of mostly-zero block device and raw
+          # would move all of it. Measured ~15 MB/s from the export proxy.
+          ansible.builtin.get_url:
+            url: "{{ export_url }}"
+            dest: "{{ output_dir }}/disk.img.gz"
+            headers:
+              x-kubevirt-export-token: "{{ export_token }}"
+            validate_certs: "{{ k8s_verify_ssl }}"
+            mode: "0644"
+            timeout: 60
+          no_log: true
+
+        - name: Expand the disk sparsely
+          # conv=sparse leaves holes where the source is zeros, so a 60Gi block
+          # device does not become a 60Gi file on this laptop.
+          ansible.builtin.shell:
+            cmd: >-
+              set -o pipefail &&
+              gunzip -c '{{ output_dir }}/disk.img.gz'
+              | dd of='{{ output_dir }}/disk.raw' conv=sparse bs=4M status=none
+            creates: "{{ output_dir }}/disk.raw"
+          changed_when: true
+
+        - name: Remove the compressed download
+          # Eagerly, not in the always block: the gzip is not needed once the
+          # raw exists, and carrying all three at once is what makes this need
+          # 40 GiB instead of 26.
+          ansible.builtin.file:
+            path: "{{ output_dir }}/disk.img.gz"
+            state: absent
+
+        - name: Convert to qcow2
+          # qcow2 at /disk/disk.img is the contract in docs/design.md §10, and
+          # it is what keeps the published layer to the used bytes rather than
+          # the provisioned ones.
+          ansible.builtin.command:
+            argv:
+              - qemu-img
+              - convert
+              - -f
+              - raw
+              - -O
+              - qcow2
+              - "{{ output_dir }}/disk.raw"
+              - "{{ output_dir }}/disk.qcow2"
+            creates: "{{ output_dir }}/disk.qcow2"
+
+        - name: Remove the expanded raw disk
+          ansible.builtin.file:
+            path: "{{ output_dir }}/disk.raw"
+            state: absent
+
+        - name: Measure what came out
+          ansible.builtin.stat:
+            path: "{{ output_dir }}/disk.qcow2"
+          register: qcow2_stat
+
+        - name: Write Containerfile
+          ansible.builtin.copy:
+            dest: "{{ output_dir }}/Containerfile"
+            mode: "0644"
+            content: |
+              FROM scratch
+              COPY disk.qcow2 /disk/disk.img
+
+        - name: Build the containerDisk image
+          ansible.builtin.command:
+            argv:
+              - podman
+              - build
+              - --tag
+              - "{{ quay_repo }}:{{ build_date_short }}"
+              - --label
+              - "org.opencontainers.image.created={{ build_date_iso }}"
+              - --label
+              - "org.opencontainers.image.source=https://github.com/ericcames/image.builder.pipeline"
+              - --label
+              - "com.redhat.cis.pipeline=image-builder-pipeline"
+              - --label
+              - "com.redhat.cis.os=windows-2022"
+              # NOT L1, and said out loud. PR 2 hardens; this is the plain
+              # build, and a label that lied would outlive everyone who knew.
+              - --label
+              - "com.redhat.cis.level=none"
+              - --label
+              - "image-factory/os-edition={{ windows_edition }}"
+              # THE EXPIRY, ON THE ARTIFACT. This is the one label a person
+              # demoing from this image needs and cannot get anywhere else.
+              - --label
+              - "image-factory/eval-expires={{ windows_eval_expires }}"
+              - --file
+              - "{{ output_dir }}/Containerfile"
+              - "{{ output_dir }}"
+          changed_when: true
+
+        - name: Check whether this tag already exists in the registry
+          # NEVER RE-PUSH A TAG. Consumers pin an immutable date tag; quietly
+          # changing what one points at is the worst thing a factory can do.
+          ansible.builtin.command:
+            argv:
+              - skopeo
+              - inspect
+              - "docker://{{ quay_repo }}:{{ build_date_short }}"
+          register: tag_exists
+          changed_when: false
+          failed_when: false
+          when: containerdisk_push | bool
+
+        - name: Refuse to overwrite an existing tag
+          ansible.builtin.assert:
+            that:
+              - tag_exists.rc != 0
+            fail_msg: >-
+              {{ quay_repo }}:{{ build_date_short }} already exists. Tags are
+              immutable here — wait a minute for a new timestamp, or publish a
+              different build.
+          when: containerdisk_push | bool
+
+        - name: Push the containerDisk
+          ansible.builtin.command:
+            argv:
+              - podman
+              - push
+              - "{{ quay_repo }}:{{ build_date_short }}"
+          changed_when: true
+          when: containerdisk_push | bool
+
+        - name: Ask the registry again whether the repository is public
+          # AFTER the push, because a repository created by the push itself did
+          # not exist to be checked beforehand.
+          ansible.builtin.uri:
+            url: "https://quay.io/api/v1/repository/{{ quay_path }}"
+            status_code: [200, 401, 403, 404]
+          register: repo_visibility_after
+          changed_when: false
+          when:
+            - containerdisk_push | bool
+            - quay_registry == 'quay.io'
+
+        - name: Fail loudly if the push created a public repository
+          ansible.builtin.assert:
+            that:
+              - >-
+                not (repo_visibility_after.status | default(401) == 200
+                     and (repo_visibility_after.json.is_public | default(false)))
+            fail_msg: >-
+              {{ quay_repo }} is PUBLIC and now holds Windows evaluation media.
+              Make it private in Quay immediately, then delete and re-push the
+              tag if you need to be certain it was never fetched.
+          when:
+            - containerdisk_push | bool
+            - quay_registry == 'quay.io'
+
+        - name: Save the publish record
+          ansible.builtin.copy:
+            content: "{{ publish_output | to_nice_json }}"
+            dest: "{{ output_dir }}/publish_output.json"
+            mode: "0644"
+          vars:
+            publish_output:
+              quay_image: "{{ quay_repo }}:{{ build_date_short }}"
+              quay_tag: "{{ build_date_short }}"
+              platform: "windows-2022-containerdisk"
+              cis_level: "none"
+              edition: "{{ windows_edition }}"
+              eval_expires: "{{ windows_eval_expires }}"
+              qcow2_bytes: "{{ qcow2_stat.stat.size | default(0) }}"
+              pushed: "{{ containerdisk_push | bool }}"
+              build_date: "{{ build_date_iso }}"
+
+        - name: Show the result
+          ansible.builtin.debug:
+            msg:
+              - >-
+                containerDisk
+                {{ 'PUSHED' if containerdisk_push | bool else 'built locally, NOT pushed' }}
+                — {{ quay_repo }}:{{ build_date_short }}
+              - "qcow2:          {{ (qcow2_stat.stat.size | default(0) | int / 1073741824) | round(2) }} GiB"
+              - "EVAL EXPIRES:   {{ windows_eval_expires }} — stamped on the image as image-factory/eval-expires"
+              - "CIS level:      none — PR 2 publishes win2k22-cis-l1-golden"
+              - "Record:         {{ output_dir }}/publish_output.json"
+              - >-
+                {{ 'Consumer: set quay_windows_image in sales.demos to the tag above.'
+                   if containerdisk_push | bool
+                   else 'Re-run with -e containerdisk_push=true to publish it.' }}
+
+      always:
+        - name: Remove the export
+          # It holds a snapshot and an exporter pod; leaving it costs storage
+          # on a cluster that has other work to do.
+          kubernetes.core.k8s:
+            state: absent
+            api_version: export.kubevirt.io/v1beta1
+            kind: VirtualMachineExport
+            name: "{{ export_name }}"
+            namespace: "{{ build_namespace }}"
+            wait: true
+
+        - name: Remove the intermediate disk images
+          # The qcow2 is kept only until it is inside the image; the raw and
+          # the gzip are pure intermediates and together are tens of GB.
+          ansible.builtin.file:
+            path: "{{ output_dir }}/{{ item }}"
+            state: absent
+          loop:
+            - disk.img.gz
+            - disk.raw

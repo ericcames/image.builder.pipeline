@@ -322,15 +322,27 @@ Virtualization consumes them via `DataImportCron`.
 
 | Property | Value |
 |----------|-------|
-| Registry | `quay.io/zigfreed/` (private repos) |
-| RHEL 9 repo | `quay.io/zigfreed/rhel9-cis-l1-golden` |
+| Registry | `quay.io/zigfreed/` |
+| RHEL 9 repo | `quay.io/zigfreed/rhel9-cis-l1-golden` — **public, deliberately**, so other SEs can consume it directly |
+| Windows 2022 repo | `quay.io/zigfreed/win2k22-golden` — **must be private** |
 | Tag format | `YYYYMMDD-HHMM` (e.g. `20260904-0100`) |
 | Tag policy | Date-based, immutable, never overwritten |
 | Disk format | qcow2 at `/disk/disk.img` inside the container image |
 
 Tags are immutable — once pushed, a tag is never reused. Consumers pin to a
-specific tag and update it deliberately. This matches the Windows containerDisk
-convention from Phase 3 (#24).
+specific tag and update it deliberately.
+
+**Visibility is per-repository and is not a house style.** RHEL 9 is public on
+purpose. **Windows is evaluation media and cannot be redistributed**, so
+`publish_windows_containerdisk.yml` refuses to push to a public repository and
+re-checks after pushing — a repository created *by* a push did not exist to be
+checked beforehand. The check is an anonymous Quay API call and needs no
+credential of its own.
+
+**The Windows repo is deliberately not named `win2k22-cis-l1-golden`.** What it
+holds today is the unhardened build; #24's PR 2 hardens the image and publishes
+`win2k22-cis-l1-golden` separately. Tags are immutable, so a repository name
+claiming L1 would make that claim permanently, on media that never had it.
 
 ### 10.2 OCI labels — the containerDisk tagging contract
 
@@ -340,11 +352,53 @@ traceability metadata in container-native format:
 | Label | Value | Purpose |
 |---|---|---|
 | `com.redhat.cis.pipeline` | `image-builder-pipeline` | Provenance |
-| `com.redhat.cis.os` | `rhel9` | OS identifier |
-| `com.redhat.cis.level` | `L1` | CIS benchmark level |
-| `com.redhat.cis.compose-id` | Image Builder compose UUID | Traceability |
+| `com.redhat.cis.os` | `rhel9` / `windows-2022` | OS identifier |
+| `com.redhat.cis.level` | `L1`, or **`none`** where the image is not hardened | CIS benchmark level |
+| `com.redhat.cis.compose-id` | Image Builder compose UUID | Traceability (RHEL only — Windows has no compose) |
 | `org.opencontainers.image.created` | ISO 8601 timestamp | Build date |
 | `org.opencontainers.image.source` | Repository URL | Source repo |
+
+Windows adds two more, and the first of them is the one that matters most to
+whoever is about to demo:
+
+| Label | Value | Purpose |
+|---|---|---|
+| `image-factory/eval-expires` | `YYYY-MM-DD` | **The 180-day clock, on the artifact.** A label on a build VM in a namespace that no longer exists helps nobody |
+| `image-factory/os-edition` | e.g. `Windows Server 2022 Standard Evaluation` | Which WIM image was installed |
+
+**`com.redhat.cis.level=none` is stated rather than omitted.** An absent label
+reads as an oversight; `none` is a claim, and it is the true one until PR 2.
+
+### 10.2.1 Getting the disk out — Windows only
+
+RHEL images arrive as a qcow2 from Image Builder's `guest-image` type. Windows is
+built by running Setup on the cluster (#24), so its disk starts as a PVC and has
+to be exported:
+
+```
+VirtualMachineExport  ->  disk.img.gz  ->  sparse expand  ->  qemu-img convert
+                                                                     |
+                              podman build (FROM scratch) <-----------+
+```
+
+Four things that are not obvious, all measured on 2026-09-05:
+
+- **The export offers every volume the VM had**, the install ISO included. The
+  root volume must be selected by name, or the published "golden image" is a
+  Windows installer — plausible right up until a consumer boots it.
+- **The token secret's name is in `status.tokenSecretRef`, not `spec`.**
+  `virtctl` sets `spec` itself, so checking the path by hand with `virtctl` does
+  not exercise what a playbook creating the export directly will see.
+- **Download `gzip`, never `raw`.** The PVC is a 60 GiB block device that is
+  mostly zeros: 4.6 GB compressed against 60 GB raw. Expanding it needs
+  `dd conv=sparse`, or a 60 GiB hole-free file lands on the operator's laptop.
+- **The intermediates are tens of gigabytes** — about 26 GiB peak even with the
+  gzip and the raw deleted as soon as each is consumed. `output_dir` defaults
+  inside the repo, so a repo on a small filesystem fails *at the end*, after the
+  slow download has already succeeded. The playbook asserts free space first.
+
+Measured on the first real export: 4.6 GB gzip, 60 GiB apparent raw at 8.7 GiB
+on disk, **8.65 GiB qcow2**.
 
 ### 10.3 Consumer discovery
 
