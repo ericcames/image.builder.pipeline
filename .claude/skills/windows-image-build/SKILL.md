@@ -1,6 +1,6 @@
 ---
 name: windows-image-build
-description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers acquiring the evaluation ISO, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, or finds one sitting at \"Press any key to boot from CD or DVD\". SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
+description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers where the media comes from, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, or finds one sitting at \"Press any key to boot from CD or DVD\". SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
 ---
 
 # windows-image-build
@@ -121,7 +121,9 @@ mid-demo if nobody wrote the date down. So:
 ### `windows_image_name` must match the ISO exactly
 
 The `<MetaData>` key `/IMAGE/NAME` in `autounattend.xml` is matched against the
-image names inside `sources/install.wim` **on the specific ISO you downloaded**.
+image names inside `sources/install.wim` **on the specific ISO the cluster
+imports** — which is pinned, both as `windows_iso_url` and as
+`windows_iso_sha256`, so the list below holds until someone changes one of them.
 Get it wrong and Windows Setup stops on the edition-selection screen — which
 looks like a hang, not a mismatch, because there is no console output to read.
 
@@ -139,11 +141,13 @@ Desktop Experience variant. `EDITIONID` on every image is `ServerStandardEval` /
 `ServerDatacenterEval`, which is how you can tell evaluation media apart from
 licensed media at a glance.
 
-To re-check after downloading a different ISO:
+To re-check after pointing `windows_iso_url` somewhere else — the only reason to
+fetch a copy by hand:
 
 ```bash
-7z e -so ~/Downloads/windows-iso/SERVER_EVAL_x64FRE_en-us.iso sources/install.wim \
-  > /tmp/install.wim && python3 playbooks/scripts/wim_images.py /tmp/install.wim
+curl -L --fail -o /tmp/win.iso "<the new windows_iso_url>"
+7z e -so /tmp/win.iso sources/install.wim > /tmp/install.wim \
+  && python3 playbooks/scripts/wim_images.py /tmp/install.wim
 ```
 
 ## Preflight Check
@@ -168,8 +172,8 @@ ansible-galaxy collection list 2>/dev/null | grep kubernetes.core
 
 ## Run
 
-**Eric runs this himself** — it touches a real cluster and takes about
-forty-five minutes.
+**Eric runs this himself** — it touches a real cluster and takes about thirty
+minutes.
 
 ```bash
 export K8S_AUTH_HOST="https://api.<sandbox-cluster>:6443"
@@ -180,8 +184,10 @@ ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
   -e windows_eval_expires=$(date -u -d '+180 days' +%Y-%m-%d)
 ```
 
-Nothing to watch. The re-master takes a few minutes, the import about two, and
-the install about twenty.
+**Nothing to watch**, which is what #40 bought. Roughly: re-master a few
+minutes, import about two, install about twenty. Anything much past thirty
+minutes is stuck rather than slow — start with the re-master pod's log, then the
+VNC console.
 
 And the teardown, which ships with it:
 
@@ -221,7 +227,7 @@ virtctl vnc win2k22-build -n image-factory-windows
 |---|---|---|
 | Setup sits on "Select the operating system" | `windows_image_name` does not match a WIM image name | Re-read the image list above; pass `-e windows_image_name='<exact name>'` |
 | "No drives were found" | virtio storage driver not loaded in WinPE | `-e windows_disk_bus=sata` is the documented fallback; then install virtio inside the guest |
-| VM never leaves `Provisioning` | The blank DataVolume or the ISO DataVolume is still importing | `oc get dv -n image-factory-windows`; the ISO upload is ~4.7 GB |
+| VM never leaves `Provisioning` | The blank DataVolume or the ISO DataVolume is still importing — and on the default path the ISO DataVolume waits on the re-master pod before it can start | `oc get dv -n image-factory-windows`, then `oc get pod win2k22-build-remaster -n image-factory-windows`. 4.7 GB in and 4.7 GB out |
 | `virtctl image-upload` fails | `cdi-uploadproxy` Route unreachable | `oc get route cdi-uploadproxy -n openshift-cnv` |
 | Build refuses to start, naming the demo cluster | `K8S_AUTH_HOST` points at demo | Intentional. Builds run on sandbox. |
 | Console sits at "Press any key to boot from CD or DVD" | The import holds stock media, not re-mastered | Check the `iso-variant` annotation above; re-run with `windows_iso_remaster=true` |
