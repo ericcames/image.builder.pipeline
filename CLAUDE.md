@@ -34,6 +34,43 @@ If a change works for one consumer but breaks another, it doesn't ship.
 - **RHEL workload nodes:** L1 baseline; L2 available per workload group when L2 builds mature.
 - See `docs/design.md` §9.5 for per-layer assignment.
 
+### Verification — every defect in Phase 3 was found by running it, none by lint
+
+Six defects in one day on #24 (#42, #44, #46, #50, #54, and the export token).
+`ansible-lint` passed at the production profile through all of them. These are
+the rules that came out of it, and each one is paid for.
+
+- **Lint-green means nothing here.** It does not execute. A playbook that has
+  never run is unverified, however clean the diff.
+- **Verify against the real input, not a fixture you built with the tool under
+  test.** #44: a synthetic ISO built by `xorriso -as mkisofs` proved `xorriso`
+  could read it. The real Windows medium is UDF and `xorriso` read one node
+  out of it.
+- **Verify with the same tool the code uses.** The export's token secret is
+  named in `status.tokenSecretRef`; `virtctl` sets `spec` itself, so checking
+  by hand with `virtctl` exercised a path the playbook never takes.
+- **The part you did not have to re-run is the part that breaks.** #46: a fix
+  re-verified with `ISO_URL=file://`, because the media was already local,
+  shipped with the HTTPS path untested. The guestfish image has no CA bundle.
+- **Read a moving indicator twice before concluding "slow".** #50: Windows Setup
+  restarted for four hours with the progress bar advancing. 51%, then 82%, then
+  **49%**. One reading cannot tell progress from a loop.
+- **A rate computed from an assumption is not a measurement.** The same four
+  hours produced "~3 min per percentage point, so the storage is the
+  bottleneck", which was void and had already been repeated to the user.
+- **Before removing a manual step, ask what it does on the paths you are not
+  looking at.** #50 again: "press any key" was the last manual step *and* the
+  thing stopping an infinite install loop.
+- **When a fix removes the reason for an older fix, revert the older one in the
+  same PR.** #36 put the install CD first *because* of that prompt; #40 removed
+  the prompt and left the boot order.
+- **Write the guard in the PR that finds the need for it.** #44 and #46 were
+  each caught in seconds by a guard added in the previous PR. #50 had no guard
+  and cost four hours; it has one now.
+- **A `no_log: true` task that fails reports `censored` and tells you nothing.**
+  Keep `no_log` where the result carries a secret — and put asserts either side
+  of it that fail with real messages.
+
 ### Hygiene
 - **Always delete tokens.** Any playbook that creates a Red Hat or AAP token must delete it in an `always:` block.
 - **Credentials never in repo.** RH token from `~/.ansible.cfg`; AWS via env vars; `docs/aws-environment.md` is gitignored for local notes.
