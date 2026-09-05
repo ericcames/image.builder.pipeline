@@ -946,18 +946,43 @@
                 domain:
                   devices:
                     disks:
-                      # BOOT THE INSTALL CD FIRST. This was the other way round
-                      # and the VM sat at "No bootable option or device was
-                      # found" (#36): EFI tried the blank root disk, found no
-                      # ESP, fell through to the CD, and by then the only thing
-                      # on screen was a prompt nobody could answer.
-                      - name: installcd
-                        cdrom:
-                          bus: sata
-                        bootOrder: 1
+                      # BOOT THE DISK FIRST, CD SECOND — and this order is only
+                      # correct because the media no longer prompts (#50).
+                      #
+                      # WHY IT LOOPED THE OTHER WAY ROUND. Windows Setup reboots
+                      # partway through every installation. The firmware then
+                      # re-runs the boot order, and with the CD first and no
+                      # prompt to time out, it booted the CD again and Setup
+                      # started from zero — forever, with the progress bar
+                      # moving the whole time. Four hours of it looked exactly
+                      # like a slow build.
+                      #
+                      # "Press any key to boot from CD or DVD" is what made
+                      # CD-first survivable: it is the mechanism that lets a
+                      # machine with bootable install media boot the INSTALLED
+                      # OS on later reboots. #36 put the CD first for a real
+                      # reason — with the disk first, EFI found no ESP on the
+                      # blank disk and fell through to a prompt nobody could
+                      # answer — and #40 removed that reason without reverting
+                      # it.
+                      #
+                      # Disk-first is now self-resolving, and it is what Red
+                      # Hat's windows-efi-installer ships (rootdisk bootOrder 1,
+                      # installcdrom bootOrder 2):
+                      #   first boot — blank disk has no ESP, firmware falls
+                      #     through to the CD, no-prompt media boots Setup
+                      #   later boots — the disk has an ESP, so the installed OS
+                      #     boots and Setup carries on to sysprep
+                      #
+                      # DO NOT SWAP THESE BACK without also restoring the
+                      # prompt. The two settings are one decision.
                       - name: rootdisk
                         disk:
                           bus: "{{ windows_disk_bus }}"
+                        bootOrder: 1
+                      - name: installcd
+                        cdrom:
+                          bus: sata
                         bootOrder: 2
                       - name: virtiocd
                         cdrom:
@@ -1017,21 +1042,46 @@
       when: not windows_sysprep_at_first_logon
 
     - name: Wait for the build to sysprep and shut down
-      # With sysprep in the answer file the VM powers itself off when it is
-      # done, so "stopped" is the completion signal. VirtualMachine, not VMI:
-      # the VMI object disappears when the guest halts.
-      kubernetes.core.k8s_info:
-        api_version: kubevirt.io/v1
-        kind: VirtualMachine
-        name: "{{ build_vm_name }}"
-        namespace: "{{ build_namespace }}"
-      register: build_vm
-      retries: "{{ build_wait_retries }}"
-      delay: "{{ build_wait_delay }}"
-      until:
-        - build_vm.resources | default([]) | length > 0
-        - build_vm.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
       when: windows_sysprep_at_first_logon
+      block:
+        - name: Watch for the guest to power itself off
+          # With sysprep in the answer file the VM powers itself off when it is
+          # done, so "stopped" is the completion signal. VirtualMachine, not
+          # VMI: the VMI object disappears when the guest halts.
+          kubernetes.core.k8s_info:
+            api_version: kubevirt.io/v1
+            kind: VirtualMachine
+            name: "{{ build_vm_name }}"
+            namespace: "{{ build_namespace }}"
+          register: build_vm
+          retries: "{{ build_wait_retries }}"
+          delay: "{{ build_wait_delay }}"
+          until:
+            - build_vm.resources | default([]) | length > 0
+            - build_vm.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
+
+      rescue:
+        # A TIMEOUT HERE HAS ONE LIKELY CAUSE, AND IT LOOKS HEALTHY (#50). If
+        # the firmware boots the install CD ahead of the disk, Windows Setup's
+        # own mid-installation reboot lands back on the CD and starts over —
+        # with the progress bar moving the entire time. Four hours of that read
+        # as "slow storage" before anyone read the percentage twice. Saying so
+        # here costs nothing and saves the next person that afternoon.
+        - name: Explain what a build that never stops usually means
+          ansible.builtin.fail:
+            msg: >-
+              {{ build_vm_name }} never reached Stopped in
+              {{ (build_wait_retries | int * build_wait_delay | int / 60) | round | int }}
+              minutes. It last reported
+              '{{ (build_vm.resources | default([]) | first
+                   | default({})).status.printableStatus | default('unknown') }}'.
+              The usual cause is Windows Setup restarting rather than
+              progressing: read the console percentage twice, a few minutes
+              apart, and if it goes DOWN the install is looping. Check that
+              rootdisk has bootOrder 1 and installcd bootOrder 2 —
+              CD-first only works with prompting media (#50). Otherwise
+              watch the console:
+              virtctl vnc {{ build_vm_name }} -n {{ build_namespace }}
 
     - name: Report what was built
       ansible.builtin.debug:

@@ -1,6 +1,6 @@
 ---
 name: windows-image-build
-description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers where the media comes from, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, or finds one sitting at \"Press any key to boot from CD or DVD\". SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
+description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers where the media comes from, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, finds one sitting at \"Press any key to boot from CD or DVD\", or has a build that runs for hours with the Setup progress bar moving and never finishes. SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
 ---
 
 # windows-image-build
@@ -118,6 +118,39 @@ Hat's `modify-windows-iso-file` uses it and asks for `devices.kubevirt.io/kvm`.
   still runs under `restricted-v2` as an arbitrary non-root UID.
 - The pod, its Service, its ConfigMap and its scratch PVC are deleted as soon as
   the import succeeds.
+
+### The boot order and the keypress are one decision, not two
+
+**`rootdisk` is `bootOrder: 1` and `installcd` is `bootOrder: 2`. Do not swap
+them back without also restoring the prompt.**
+
+Windows Setup reboots partway through every installation. The firmware then
+re-runs the boot order — so with the CD first and no prompt to time out, it boots
+the CD again and **Setup starts from zero, forever**, with the progress bar
+moving the whole time. That cost four hours before anyone read the percentage
+twice ([#50](https://github.com/ericcames/image.builder.pipeline/issues/50)).
+
+**"Press any key to boot from CD or DVD" is what made CD-first survivable.** It
+is the mechanism that lets a machine with bootable install media boot the
+*installed* OS on later reboots. [#36](https://github.com/ericcames/image.builder.pipeline/issues/36)
+put the CD first for a real reason — with the disk first, EFI found no ESP on the
+blank disk and fell through to a prompt nobody could answer — and
+[#40](https://github.com/ericcames/image.builder.pipeline/issues/40) removed that
+reason without reverting it.
+
+Disk-first is self-resolving, and it is what Red Hat's `windows-efi-installer`
+ships:
+
+| Boot | What happens |
+|---|---|
+| First | Blank disk has no ESP, firmware falls through to the CD, no-prompt media boots Setup unattended |
+| Later | The disk has an ESP, so the installed OS boots and Setup carries on to sysprep |
+
+**The general lesson, which is the expensive half.** The keypress was described
+in the handoff as the last *manual* step — noise to be removed. It was also
+load-bearing, and nothing said so, because nobody had written down what the
+prompt did on the *second* boot. **Before removing a manual step, ask what it
+does on the paths you are not looking at.**
 
 ### The 180-day clock is the thing people forget
 
@@ -248,6 +281,8 @@ virtctl vnc win2k22-build -n image-factory-windows
 | `virtctl image-upload` fails | `cdi-uploadproxy` Route unreachable | `oc get route cdi-uploadproxy -n openshift-cnv` |
 | Build refuses to start, naming the demo cluster | `K8S_AUTH_HOST` points at demo | Intentional. Builds run on sandbox. |
 | Console sits at "Press any key to boot from CD or DVD" | The import holds stock media, not re-mastered | Check the `iso-variant` annotation above; re-run with `windows_iso_remaster=true` |
+| **Setup runs for hours, progress bar moving, never finishes** | **Setup is restarting, not progressing** — the CD is booting ahead of the disk (#50) | **Read the percentage twice, minutes apart. If it goes DOWN it is looping.** Check `rootdisk` is `bootOrder: 1` |
+| Build times out with "never reached Stopped" | Usually the loop above | The failure message says what to check. `virtctl vnc win2k22-build -n image-factory-windows` |
 | Playbook stops on the re-master with pod logs attached | The re-master failed — bad checksum, no `efisys_noprompt.bin`, boot images of unequal size, or the bytes at the El Torito address were not the prompting image | Both initContainer logs are in the failure. The pod is left in place; `oc logs win2k22-build-remaster -c fetch` and `-c remaster` |
 | Re-master pod never becomes Ready | Still downloading (`-c fetch`), or libguestfs is booting its appliance (`-c remaster`) | `oc logs -f win2k22-build-remaster -c fetch -n image-factory-windows` |
 | Re-master fails with "the bytes at LBA … are not efi/microsoft/boot/efisys.bin" | A different medium, laid out differently | Deliberate refusal, not a bug. Nothing was written. Re-check `windows_iso_url` and `windows_iso_sha256` |
