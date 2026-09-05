@@ -32,11 +32,13 @@
 # on a cluster anyone might present from. The artifact is published to quay, so
 # the demo environment consumes a tag and never hosts a build.
 #
-# THE BUILD NEEDS NO ONE AT THE CONSOLE (#40). The stock ISO's UEFI boot image
-# asks "Press any key to boot from CD or DVD" and fails silently when nobody
-# answers, so a pod on the cluster re-masters the media onto Microsoft's own
-# efisys_noprompt.bin before CDI imports it. Pass -e windows_iso_remaster=false
-# to go back to the stock ISO and a keypress.
+# THE BUILD NEEDS NO ONE AT THE CONSOLE (#40, #44). The stock ISO's UEFI boot
+# image asks "Press any key to boot from CD or DVD" and fails silently when
+# nobody answers, so a pod on the cluster patches the El Torito boot image to
+# Microsoft's own efisys_noprompt.bin before CDI imports it. The two are the
+# same size on this medium, so it is a byte-exact overwrite at one LBA — the
+# UDF filesystem is left exactly as Microsoft shipped it. Pass
+# -e windows_iso_remaster=false to go back to the stock ISO and a keypress.
 #
 # WHAT THIS DOES NOT DO YET, and where it lands:
 #   PR 2 — ansible-lockdown/Windows-2022-CIS hardening + audit-tag evidence.
@@ -106,31 +108,45 @@
     # 25-minute run before anyone noticed.
     #
     # Microsoft ships efisys_noprompt.bin beside efisys.bin for exactly this,
-    # and Red Hat's windows-efi-installer pipeline swaps it in the same way, so
-    # this is the sanctioned fix rather than a trick. A pod on the cluster does
-    # the swap and serves the result to CDI: the 4.7 GB never crosses the slow
-    # link (#36), and the proven source.http import path is unchanged — only
-    # the URL differs.
+    # and Red Hat's windows-efi-installer pipeline swaps it in too, so this is
+    # the sanctioned fix rather than a trick. A pod on the cluster does the swap
+    # and serves the result to CDI: the 4.7 GB never crosses the slow link
+    # (#36), and the proven source.http import path is unchanged — only the URL
+    # differs.
+    #
+    # THE FIRST ATTEMPT USED xorriso AND FAILED ON REAL MEDIA (#44). The Windows
+    # medium is UDF — it has to be, since sources/install.wim is 4,340,202,461
+    # bytes and ISO 9660 cannot hold a single extent past 4 GiB — and libisofs
+    # has no UDF reader, so it saw a one-file stub. See remaster_iso.sh.
     windows_iso_remaster: true
     remaster_name: "{{ build_vm_name }}-remaster"
     remaster_url: >-
       http://{{ remaster_name }}.{{ build_namespace }}.svc:{{ iso_remaster_port
       }}/{{ iso_remaster_filename }}
 
-    # quay.io/kubevirt/tekton-tasks:v0.26.0 — the image behind Red Hat's own
-    # modify-windows-iso-file task, which already carries xorriso, curl and
-    # python3 and runs unprivileged. Pinned by digest on the same reasoning
-    # execution-environment.yml pins its base: a tag is a moving target, and a
-    # factory that cannot say what it consumed cannot say what it produced.
+    # TWO IMAGES, BOTH RED HAT'S OWN, both pinned by digest on the same
+    # reasoning execution-environment.yml pins its base: a tag is a moving
+    # target, and a factory that cannot say what it consumed cannot say what it
+    # produced. Verified 2026-09-05 against what this cluster resolves the
+    # v0.26.0 tags to.
+    #
+    # THE PATCH NEEDS guestfish AND THE KVM DEVICE (#44). The medium is UDF, and
+    # only libguestfs can read it — it boots a kernel that has a UDF driver,
+    # which is exactly why Red Hat's modify-windows-iso-file asks for
+    # devices.kubevirt.io/kvm. That image has no python3, so serving is a
+    # separate container on the image that does.
     iso_remaster_image: >-
+      quay.io/kubevirt/tekton-tasks-disk-virt@sha256:694dc93a7712165fdadad64e02631f079084a5264f94303d9ebe4d7df189bd0f
+    iso_serve_image: >-
       quay.io/kubevirt/tekton-tasks@sha256:87743fb600a52ee23ef8f673d286610fc0396e94790f2a9a38887329f1ff7445
 
-    # A PVC, NOT AN emptyDir. Peak use is the extracted tree plus the rebuilt
-    # ISO, roughly twice the media — about 9.4 GB. An emptyDir spends the
-    # node's ephemeral storage, and crossing that line evicts the pod under
-    # disk pressure, which reads as an unexplained restart rather than as "out
-    # of space". Deleted as soon as the import succeeds.
-    iso_remaster_scratch_size: "20Gi"
+    # A PVC, NOT AN emptyDir. An emptyDir spends the node's ephemeral storage,
+    # and crossing that line evicts the pod under disk pressure, which reads as
+    # an unexplained restart rather than as "out of space". Peak use is the ISO
+    # plus 3 MB of boot images — the patch never makes a second copy, and the
+    # finished medium is renamed into place on the same filesystem. Deleted as
+    # soon as the import succeeds.
+    iso_remaster_scratch_size: "8Gi"
     iso_remaster_port: 8080
     iso_remaster_filename: "windows-2022-noprompt.iso"
 
@@ -440,11 +456,12 @@
       # locally would mean a 4.7 GB upload and would undo the whole reason
       # windows_iso_source defaults to 'url'.
       #
-      # The pod fetches the stock ISO, verifies windows_iso_sha256, swaps
-      # efisys_noprompt.bin / cdboot_noprompt.efi over their prompting twins,
-      # rebuilds the ISO and serves it over HTTP. CDI then imports from the
-      # Service instead of from Microsoft — one URL different, everything
-      # downstream identical and already verified.
+      # The pod fetches the stock ISO, verifies windows_iso_sha256, reads the
+      # two boot images out of the medium with guestfish, proves the bytes at
+      # the El Torito load address are the prompting one, overwrites them with
+      # the no-prompt twin of identical length, and serves the result over
+      # HTTP. CDI then imports from the Service instead of from Microsoft — one
+      # URL different, everything downstream identical and already verified.
       when: remaster_needed | bool
       block:
         - name: Create the scratch volume for the re-master
@@ -501,7 +518,12 @@
                 # 4.7 GB and hide whatever went wrong the first time. A failed
                 # pod is left for its log to be read.
                 restartPolicy: Never
-                containers:
+                # TWO CONTAINERS, AND THE SPLIT IS THE DESIGN (#44). Patching
+                # needs guestfish, which needs the KVM device to read UDF at
+                # any speed; serving needs python3, which the guestfish image
+                # does not have. An initContainer runs to completion first, so
+                # the server only ever starts on a finished medium.
+                initContainers:
                   - name: remaster
                     image: "{{ iso_remaster_image }}"
                     command:
@@ -514,43 +536,27 @@
                         value: "{{ windows_iso_sha256 }}"
                       - name: OUT_NAME
                         value: "{{ iso_remaster_filename }}"
-                      - name: PORT
-                        value: "{{ iso_remaster_port | string }}"
                       - name: SCRATCH
                         value: /scratch
-                    # BARE, NOT `| int`. Measured: Ansible hands a nested
-                    # "{{ x }}" to the module as the int 8080, and a nested
-                    # "{{ x | int }}" as the STRING '8080' — the opposite of
-                    # what the filter name suggests. containerPort is int32 and
-                    # both probe and Service ports are IntOrString, where a
-                    # string means a *named* port, so the wrong one here does
-                    # not error: the probe simply never passes.
-                    ports:
-                      - containerPort: "{{ iso_remaster_port }}"
-                    # READINESS IS THE COMPLETION SIGNAL. The script writes
-                    # /ready only after the finished ISO has been renamed into
-                    # the served directory, so a passing probe means "complete
-                    # ISO", not "process alive" — and the Service has no
-                    # endpoints until then, so CDI cannot reach a partial file
-                    # even if something asked it to.
-                    readinessProbe:
-                      httpGet:
-                        path: /ready
-                        port: "{{ iso_remaster_port }}"
-                      initialDelaySeconds: 20
-                      periodSeconds: 10
-                      failureThreshold: 300
+                      # libguestfs runs its appliance directly rather than
+                      # through libvirt, which it cannot reach from here.
+                      - name: LIBGUESTFS_BACKEND
+                        value: direct
+                      - name: LIBGUESTFS_PATH
+                        value: /usr/local/lib/guestfs/appliance
                     resources:
                       requests:
                         cpu: 500m
-                        memory: 1Gi
+                        memory: 2Gi
+                        # NOT A PRIVILEGE ESCALATION — an extended resource from
+                        # the KubeVirt device plugin, which requires request and
+                        # limit to match. The pod still runs under restricted-v2
+                        # as an arbitrary non-root UID.
+                        devices.kubevirt.io/kvm: "1"
                       limits:
                         cpu: "2"
                         memory: 4Gi
-                    # Matches OpenShift's restricted-v2 SCC, and mirrors Red
-                    # Hat's own task. xorriso needs no privilege; guestfish,
-                    # which that task uses to read the ISO, would have wanted
-                    # devices.kubevirt.io/kvm.
+                        devices.kubevirt.io/kvm: "1"
                     securityContext:
                       runAsNonRoot: true
                       allowPrivilegeEscalation: false
@@ -564,6 +570,55 @@
                         mountPath: /scratch
                       - name: script
                         mountPath: /opt/remaster
+                containers:
+                  - name: serve
+                    image: "{{ iso_serve_image }}"
+                    command:
+                      - python3
+                      - -m
+                      - http.server
+                      - "{{ iso_remaster_port | string }}"
+                      - --directory
+                      - /scratch/serve
+                    # BARE, NOT `| int`. Measured: Ansible hands a nested
+                    # "{{ x }}" to the module as the int 8080, and a nested
+                    # "{{ x | int }}" as the STRING '8080' — the opposite of
+                    # what the filter name suggests. containerPort is int32 and
+                    # both probe and Service ports are IntOrString, where a
+                    # string means a *named* port, so the wrong one here does
+                    # not error: the probe simply never passes.
+                    ports:
+                      - containerPort: "{{ iso_remaster_port }}"
+                    # READINESS IS THE COMPLETION SIGNAL. /ready is written by
+                    # the initContainer only after the patched medium has been
+                    # renamed into the served directory and re-read, so a
+                    # passing probe means "correct, complete ISO", not "process
+                    # alive" — and the Service has no endpoints until then.
+                    readinessProbe:
+                      httpGet:
+                        path: /ready
+                        port: "{{ iso_remaster_port }}"
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+                      failureThreshold: 60
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 256Mi
+                      limits:
+                        cpu: "1"
+                        memory: 1Gi
+                    securityContext:
+                      runAsNonRoot: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+                      seccompProfile:
+                        type: RuntimeDefault
+                    volumeMounts:
+                      - name: scratch
+                        mountPath: /scratch
                 volumes:
                   - name: scratch
                     persistentVolumeClaim:
@@ -615,11 +670,15 @@
 
       rescue:
         - name: Read the re-master pod's log
+          # The initContainer by name: with two containers the API refuses an
+          # unqualified request, and the patch is where failures happen — the
+          # server never starts if it did not finish.
           kubernetes.core.k8s_log:
             api_version: v1
             kind: Pod
             name: "{{ remaster_name }}"
             namespace: "{{ build_namespace }}"
+            container: remaster
           register: remaster_log
           failed_when: false
 
