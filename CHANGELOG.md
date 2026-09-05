@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`virtctl` ignored `K8S_AUTH_*` and silently targeted `localhost:8080`** (#33). Those are the *python* client's variables, consumed by `kubernetes.core`; `virtctl` is a Go client that reads a kubeconfig or its own flags. The play-level `environment:` block covered every `kubernetes.core` task and nothing else — invisible until the playbook actually ran, which #29 said in as many words had not happened. Fixed with a mode `0600` kubeconfig written to a temp file and deleted in an `always:` block; `--token` would have worked and would have put the bearer token in the process list where any local user can read it with `ps`.
+- **The ISO upload deadlocked on `WaitForFirstConsumer` storage** — `cannot upload to DataVolume in PendingPopulation phase`. The PVC will not bind until a pod consumes it, and the upload needs it bound first. `--force-bind` is the imperative twin of the `cdi.kubevirt.io/storage.bind.immediate.requested` annotation. Measured on sandbox: the default class is `ocs-external-storagecluster-ceph-rbd`, WFFC.
+- **The idempotence check tested existence rather than success, and that was the dangerous one.** A failed upload leaves the DataVolume behind in `PendingPopulation`, so a re-run that only asked "does it exist?" would have skipped the upload and installed Windows from an **empty disk** — a broken image that looks like a successful build. The playbook now reads the DataVolume's phase, deletes a non-`Succeeded` one, and re-uploads.
+
 ### Added
 - `playbooks/build_cis_containerdisk.yml` — builds RHEL 9 CIS L1 qcow2 via Image Builder `guest-image` type, wraps as containerDisk, pushes to private Quay.io repo. Closes #21
 - `wait_for_compose.py` handles guest-image compose results (download URL) in addition to AMI compose results — backward-compatible

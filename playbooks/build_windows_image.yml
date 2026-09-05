@@ -263,22 +263,104 @@
         namespace: "{{ build_namespace }}"
       register: iso_dv
 
+    - name: Decide whether the ISO still needs uploading
+      # EXISTENCE IS NOT SUCCESS, and testing the wrong one is how a build ends
+      # up installing from an empty disk. A failed `virtctl image-upload` leaves
+      # the DataVolume behind in PendingPopulation, so a re-run that only asked
+      # "does it exist?" would skip the upload and carry on with nothing in it.
+      ansible.builtin.set_fact:
+        iso_phase: "{{ (iso_dv.resources | default([]) | first | default({})).status.phase | default('') }}"
+
+    - name: Remove a partially-uploaded ISO DataVolume
+      kubernetes.core.k8s:
+        state: absent
+        api_version: cdi.kubevirt.io/v1beta1
+        kind: DataVolume
+        name: "{{ build_vm_name }}-iso"
+        namespace: "{{ build_namespace }}"
+        wait: true
+      when:
+        - iso_dv.resources | default([]) | length > 0
+        - iso_phase != 'Succeeded'
+
+    # VIRTCTL DOES NOT READ K8S_AUTH_*. Those are the python client's variables,
+    # consumed by kubernetes.core. virtctl is a Go client: it reads a kubeconfig
+    # or its own flags, and with neither it silently falls back to
+    # localhost:8080 — "dial tcp [::1]:8080: connect: connection refused" (#33).
+    # The play-level `environment:` block covers every kubernetes.core task and
+    # nothing else, which is invisible until something actually runs.
+    #
+    # --token would work, and would put the bearer token in the process list
+    # where any local user can read it with `ps`. A 0600 kubeconfig deleted in
+    # an always: block does not.
     - name: Upload the Windows ISO
-      # Idempotent by check, not by flag: re-uploading several GB because a
-      # later task failed would make this playbook painful to iterate on.
-      ansible.builtin.command:
-        argv:
-          - virtctl
-          - image-upload
-          - dv
-          - "{{ build_vm_name }}-iso"
-          - "--namespace={{ build_namespace }}"
-          - "--size={{ windows_iso_size }}"
-          - "--image-path={{ windows_iso_path }}"
-          - "--insecure"
-      register: iso_upload
-      changed_when: iso_upload.rc == 0
-      when: iso_dv.resources | default([]) | length == 0
+      when: iso_phase != 'Succeeded'
+      block:
+        - name: Create a temporary kubeconfig for virtctl
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .kubeconfig
+          register: virtctl_kubeconfig
+          changed_when: false
+
+        - name: Write the kubeconfig
+          ansible.builtin.copy:
+            dest: "{{ virtctl_kubeconfig.path }}"
+            mode: "0600"
+            content: |
+              apiVersion: v1
+              kind: Config
+              clusters:
+                - name: build
+                  cluster:
+                    server: {{ k8s_auth_host }}
+                    insecure-skip-tls-verify: {{ (not k8s_verify_ssl) | bool | lower }}
+              users:
+                - name: build
+                  user:
+                    token: {{ k8s_auth_api_key }}
+              contexts:
+                - name: build
+                  context:
+                    cluster: build
+                    user: build
+                    namespace: {{ build_namespace }}
+              current-context: build
+          no_log: true
+          changed_when: false
+
+        - name: Stream the ISO through the CDI upload proxy
+          # Idempotent by check, not by flag: re-uploading several GB because a
+          # later task failed would make this playbook painful to iterate on.
+          ansible.builtin.command:
+            argv:
+              - virtctl
+              - image-upload
+              - dv
+              - "{{ build_vm_name }}-iso"
+              - "--kubeconfig={{ virtctl_kubeconfig.path }}"
+              - "--namespace={{ build_namespace }}"
+              - "--size={{ windows_iso_size }}"
+              - "--image-path={{ windows_iso_path }}"
+              - "--insecure"
+              # WaitForFirstConsumer storage will not bind the PVC until a pod
+              # consumes it, and the upload needs it bound first — a deadlock
+              # that surfaces as "cannot upload to DataVolume in
+              # PendingPopulation phase". Measured on sandbox: the default
+              # class is ocs-external-storagecluster-ceph-rbd, WFFC. This is the
+              # imperative twin of the
+              # cdi.kubevirt.io/storage.bind.immediate.requested annotation.
+              - "--force-bind"
+          register: iso_upload
+          changed_when: iso_upload.rc == 0
+
+      always:
+        - name: Remove the temporary kubeconfig
+          ansible.builtin.file:
+            path: "{{ virtctl_kubeconfig.path }}"
+            state: absent
+          when: virtctl_kubeconfig.path is defined
+          changed_when: false
 
     - name: Create the Windows build VM
       kubernetes.core.k8s:
