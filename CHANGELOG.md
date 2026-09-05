@@ -58,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **The idempotence check tested existence rather than success, and that was the dangerous one.** A failed upload leaves the DataVolume behind in `PendingPopulation`, so a re-run that only asked "does it exist?" would have skipped the upload and installed Windows from an **empty disk** — a broken image that looks like a successful build. The playbook now reads the DataVolume's phase, deletes a non-`Succeeded` one, and re-uploads.
 
 ### Added
+- `.github/workflows/containerdisk-rebuild.yml` — monthly GitHub Actions scheduled rebuild for the RHEL 9 CIS L1 containerDisk. Runs 1st of every month at 06:00 UTC; also supports manual `workflow_dispatch` triggers. Zero playbook changes — secrets provide the RH token and Quay credentials. Closes #48
+
+### Added
 - `playbooks/build_cis_containerdisk.yml` — builds RHEL 9 CIS L1 qcow2 via Image Builder `guest-image` type, wraps as containerDisk, pushes to private Quay.io repo. Closes #21
 - `wait_for_compose.py` handles guest-image compose results (download URL) in addition to AMI compose results — backward-compatible
 - `docs/design.md` §10 — containerDisk contract for OpenShift Virtualization: distribution model, OCI labels, credential pattern, compliance evidence strategy. Parallel to §9's AMI contract
