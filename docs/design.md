@@ -113,6 +113,15 @@ All credentials are resolved at runtime via environment variables — never stor
 | `AWS_ACCESS_KEY_ID` | AWS authentication |
 | `AWS_SECRET_ACCESS_KEY` | AWS authentication |
 | `AWS_DEFAULT_REGION` | Target AWS region |
+| `K8S_AUTH_HOST` | OpenShift API URL for the Windows containerDisk build (#24) |
+| `K8S_AUTH_API_KEY` | OpenShift bearer token for the same |
+| `WINDOWS_ADMIN_PASSWORD` | Local Administrator password baked into the Windows image (#24) |
+
+The OpenShift variables point at the **sandbox** environment. Builds never run
+against the demo environment — a 45-minute Windows install has no business on a
+cluster someone might be presenting from, and `build_windows_image.yml` asserts
+against it. The consumer reaches the artifact through a published containerdisk
+tag, not through this cluster.
 
 ---
 

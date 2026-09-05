@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  autounattend.xml — unattended Windows Server 2022 install for the golden image.
+  Rendered by playbooks/build_windows_image.yml and delivered to the VM as a
+  ConfigMap volume, which KubeVirt presents as an iso9660 CD-ROM. Windows Setup
+  searches removable media for this filename at the root, so no ISO authoring
+  tool is needed on the machine running the playbook.
+
+  DRIVERS ARE THE PART THAT BREAKS. Windows Setup cannot see a virtio disk
+  without the viostor driver, so the windowsPE pass below adds the virtio-win
+  CD as a DriverPath. If Setup still reports "no drives were found", the disk
+  bus is the first thing to check — see windows_disk_bus in the playbook, which
+  falls back to sata for exactly this case.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <SetupUILanguage><UILanguage>{{ windows_ui_language }}</UILanguage></SetupUILanguage>
+      <InputLocale>{{ windows_input_locale }}</InputLocale>
+      <SystemLocale>{{ windows_ui_language }}</SystemLocale>
+      <UILanguage>{{ windows_ui_language }}</UILanguage>
+      <UserLocale>{{ windows_ui_language }}</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <!-- The virtio-win containerdisk, attached as a CD by the playbook.
+           Paths are the layout Red Hat ships: <driver>\2k22\amd64. -->
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Path>{{ virtio_drive_letter }}:\viostor\2k22\amd64</Path>
+        </PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="2"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Path>{{ virtio_drive_letter }}:\NetKVM\2k22\amd64</Path>
+        </PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="3"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Path>{{ virtio_drive_letter }}:\vioscsi\2k22\amd64</Path>
+        </PathAndCredentials>
+      </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <DiskConfiguration>
+        <!-- WillShowUI never: an unattended build must not stop for a prompt. -->
+        <WillShowUI>OnError</WillShowUI>
+        <Disk wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <!-- UEFI layout: ESP, MSR, then Windows. GPT is required for EFI boot,
+               which is what the windows.2k22 preference gives the VM. -->
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order><Type>EFI</Type><Size>260</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order><Type>MSR</Type><Size>128</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order><Type>Primary</Type><Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order><PartitionID>1</PartitionID>
+              <Label>System</Label><Format>FAT32</Format>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order><PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order><PartitionID>3</PartitionID>
+              <Label>Windows</Label><Letter>C</Letter><Format>NTFS</Format>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Key>/IMAGE/NAME</Key>
+              <Value>{{ windows_image_name }}</Value>
+            </MetaData>
+          </InstallFrom>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <!-- Evaluation media carries its own licensing; no key is supplied.
+             AcceptEula must be true or Setup stops on the licence page. -->
+        <AcceptEula>true</AcceptEula>
+        <FullName>{{ windows_owner_name }}</FullName>
+        <Organization>{{ windows_owner_org }}</Organization>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>{{ windows_computer_name }}</ComputerName>
+      <TimeZone>{{ windows_timezone }}</TimeZone>
+    </component>
+
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <UserAccounts>
+        <AdministratorPassword>
+          <Value>{{ windows_admin_password }}</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>Administrator</Username>
+        <LogonCount>{{ windows_autologon_count }}</LogonCount>
+        <Password>
+          <Value>{{ windows_admin_password }}</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <!-- Order matters. Drivers and the guest agent first, because the
+             playbook's next step reaches the guest over WinRM and CNV reports
+             the guest's address through the agent. -->
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <Description>Install all virtio drivers from the virtio-win CD</Description>
+          <CommandLine>cmd /c "{{ virtio_drive_letter }}:\virtio-win-guest-tools.exe /install /quiet /norestart"</CommandLine>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>2</Order>
+          <Description>Install the QEMU guest agent</Description>
+          <CommandLine>cmd /c "msiexec /i {{ virtio_drive_letter }}:\guest-agent\qemu-ga-x86_64.msi /qn /norestart"</CommandLine>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>3</Order>
+          <Description>Enable WinRM over HTTPS on 5986 with a self-signed cert</Description>
+          <!-- 5986, not 5985: this is the contract sales.demos#3 settled on.
+               Its windemo inventory group sets ansible_port 5986 with
+               ansible_winrm_server_cert_validation ignore, which is what makes
+               a self-signed certificate the right choice here. -->
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { Enable-PSRemoting -Force -SkipNetworkProfileCheck; $c = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My; New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $c.Thumbprint -Force; Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true; New-NetFirewallRule -DisplayName 'WinRM HTTPS' -Direction Inbound -LocalPort {{ winrm_port }} -Protocol TCP -Action Allow }"</CommandLine>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>4</Order>
+          <Description>Signal the playbook that first-logon work is finished</Description>
+          <!-- The playbook polls for this file over WinRM. Without a marker it
+               would have to guess when FirstLogonCommands completed, and a
+               guess is what makes an unattended build flaky. -->
+          <CommandLine>cmd /c "echo done &gt; C:\Windows\Temp\{{ build_marker_file }}"</CommandLine>
+        </SynchronousCommand>
+{% if windows_sysprep_at_first_logon %}
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>5</Order>
+          <Description>Generalize and shut down</Description>
+          <!-- FLAG-GUARDED ON PURPOSE. Sysprep here means the build needs no
+               WinRM round-trip to finish, which is what keeps PR 1 free of the
+               Windows collections. The hardening PR sets
+               windows_sysprep_at_first_logon=false and runs sysprep itself,
+               AFTER the CIS role — generalizing before hardening would throw
+               the hardening away. -->
+          <CommandLine>cmd /c "C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /quiet"</CommandLine>
+        </SynchronousCommand>
+{% endif %}
+      </FirstLogonCommands>
+    </component>
+  </settings>
+
+</unattend>

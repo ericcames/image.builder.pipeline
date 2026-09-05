@@ -1,0 +1,398 @@
+---
+# ===========================================================================
+# build_windows_image.yml — build a Windows Server 2022 image on OpenShift
+# Virtualization. Issue #24, PR 1 of 3: build only, unhardened.
+#
+#   export K8S_AUTH_HOST=https://api.<cluster>:6443
+#   export K8S_AUTH_API_KEY=<token>
+#   ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
+#     -e windows_iso_path=/path/to/SERVER_EVAL_x64FRE_en-us.iso
+#
+#   # and the teardown, which ships with it
+#   ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
+#     -e windows_build_state=absent
+#
+# WHY THE CLUSTER AND NOT A LOCAL HYPERVISOR. #21 flags "a local libvirt/KVM
+# scan path — new hypervisor dependency" as its High-risk item. A KubeVirt
+# cluster IS a hypervisor, so building here avoids that dependency rather than
+# incurring it. It also means the image is exercised by KubeVirt before any
+# consumer sees it, which a laptop-built qcow2 never is.
+#
+# NO OPERATOR IS INSTALLED. This drives plain VirtualMachine objects with
+# kubernetes.core, the same way this repo already drives EC2 with amazon.aws.
+# Red Hat's windows-efi-installer Tekton pipeline would do the same job, but it
+# would mean installing OpenShift Pipelines into a cluster the CONSUMER repo
+# owns, for this repo's benefit — the one genuine cross-repo dependency, and it
+# buys nothing the API does not already give us.
+#
+# CREDENTIALS ARE ENV VARS, per docs/design.md §4. Nothing is read from
+# sales.demos' vault; this repo does not share its secrets mechanism.
+#
+# BUILD ON SANDBOX, NEVER ON DEMO. A 45-minute Windows install has no business
+# on a cluster anyone might present from. The artifact is published to quay, so
+# the demo environment consumes a tag and never hosts a build.
+#
+# WHAT THIS DOES NOT DO YET, and where it lands:
+#   PR 2 — ansible-lockdown/Windows-2022-CIS hardening + audit-tag evidence.
+#          It sets windows_sysprep_at_first_logon=false and syspreps itself,
+#          after hardening. Generalizing first would throw the hardening away.
+#   PR 3 — VirtualMachineExport, containerdisk wrap, podman push to private
+#          quay, and docs/design.md §10 (the containerDisk contract, parallel
+#          to §9 for AMIs).
+# ===========================================================================
+
+- name: Build a Windows Server 2022 image on OpenShift Virtualization
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  environment:
+    # kubernetes.core reads these; keeps the token out of every task's args and
+    # out of any -vvv output.
+    K8S_AUTH_HOST: "{{ k8s_auth_host }}"
+    K8S_AUTH_API_KEY: "{{ k8s_auth_api_key }}"
+    K8S_AUTH_VERIFY_SSL: "{{ k8s_verify_ssl | string }}"
+
+  vars:
+    # --- Connection, resolved the way every credential in this repo is -------
+    k8s_auth_host: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_HOST') }}"
+    k8s_auth_api_key: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_API_KEY') }}"
+    k8s_verify_ssl: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_VERIFY_SSL') | default(false, true) | bool }}"
+
+    windows_build_state: "present"
+    build_namespace: "image-factory-windows"
+
+    # --- Inputs --------------------------------------------------------------
+    # The evaluation ISO. NOT fetched automatically: Microsoft's Evaluation
+    # Center requires accepting terms, so a scripted download is both fragile
+    # and arguably beside the point. Supply the path; the checksum is recorded.
+    windows_iso_path: ""
+    windows_iso_sha256: ""
+    windows_iso_size: "8Gi"
+
+    # THE 180-DAY CLOCK. Evaluation media expires, and an expired Windows guest
+    # nags and then shuts down hourly — mid-demo, if nobody wrote the date down.
+    # This is stamped into the image label and must reach the run-sheet too.
+    windows_eval_expires: ""
+
+    # --- The build VM --------------------------------------------------------
+    # Red Hat's shipped instance type, deliberately NOT sales.demos' sd1.*
+    # types: those are created and destroyed by that repo's terraform, so a
+    # build depending on them would break whenever it ran a teardown.
+    # Measured on sandbox: u1.large is 2 vCPU / 8 GiB.
+    build_instancetype: "u1.large"
+    build_preference: "windows.2k22"
+    build_vm_name: "win2k22-build"
+    target_disk_size: "60Gi"
+    windows_disk_bus: "virtio"
+
+    virtio_win_image: "registry.redhat.io/container-native-virtualization/virtio-win"
+    virtio_drive_letter: "E"
+
+    # --- Guest settings, rendered into autounattend.xml ----------------------
+    windows_image_name: "Windows Server 2022 SERVERSTANDARD"
+    windows_computer_name: "WIN2K22GOLD"
+    windows_ui_language: "en-US"
+    windows_input_locale: "en-US"
+    windows_timezone: "UTC"
+    windows_owner_name: "Image Builder Pipeline"
+    windows_owner_org: "Red Hat Demo"
+    windows_autologon_count: 1
+    winrm_port: 5986
+    build_marker_file: "build-complete.txt"
+
+    # PR 1 syspreps from the answer file, so the build needs no WinRM round
+    # trip and this PR stays free of the Windows collections. PR 2 flips this.
+    windows_sysprep_at_first_logon: true
+
+    # The local Administrator password baked into the image. Never committed:
+    # supply with -e, or export WINDOWS_ADMIN_PASSWORD.
+    windows_admin_password: "{{ lookup('ansible.builtin.env', 'WINDOWS_ADMIN_PASSWORD') }}"
+
+    build_wait_retries: 120
+    build_wait_delay: 30
+
+  tasks:
+    - name: Assert the requested state is valid
+      ansible.builtin.assert:
+        that:
+          - windows_build_state in ['present', 'absent']
+        fail_msg: >-
+          windows_build_state must be 'present' or 'absent', not
+          '{{ windows_build_state }}'.
+
+    - name: Assert the cluster connection is available
+      ansible.builtin.assert:
+        that:
+          - k8s_auth_host | length > 0
+          - k8s_auth_api_key | length > 0
+        fail_msg: >-
+          K8S_AUTH_HOST and K8S_AUTH_API_KEY must be exported. See
+          docs/design.md §4 — this repo resolves every credential from the
+          environment and stores none of them.
+
+    - name: Assert this is not the demo cluster
+      # Building on the environment someone might be presenting from is the
+      # mistake worth making impossible rather than merely documenting.
+      ansible.builtin.assert:
+        that:
+          - not (k8s_auth_host is search(demo_cluster_marker))
+        fail_msg: >-
+          K8S_AUTH_HOST looks like the demo cluster ({{ k8s_auth_host }}).
+          Builds run on sandbox; demo consumes the published tag and never
+          hosts a build. Override with -e demo_cluster_marker='' if you are
+          certain.
+      vars:
+        demo_cluster_marker: "{{ demo_cluster_hostname | default('cluster-6d5xj', true) }}"
+      when: windows_build_state == 'present'
+
+    - name: Assert the build inputs are present
+      ansible.builtin.assert:
+        that:
+          - windows_iso_path | length > 0
+          - windows_admin_password | length > 0
+          - windows_eval_expires | length > 0
+        fail_msg: >-
+          Need windows_iso_path (the evaluation ISO), windows_admin_password
+          (or WINDOWS_ADMIN_PASSWORD in the environment), and
+          windows_eval_expires (the 180-day expiry date, YYYY-MM-DD) — an
+          undated evaluation image is a time bomb nobody can see.
+      when: windows_build_state == 'present'
+
+    - name: Check the ISO is readable
+      ansible.builtin.stat:
+        path: "{{ windows_iso_path }}"
+        checksum_algorithm: sha256
+        get_checksum: "{{ windows_iso_sha256 | length > 0 }}"
+      register: iso_stat
+      when: windows_build_state == 'present'
+
+    - name: Assert the ISO exists and matches its checksum when one is given
+      ansible.builtin.assert:
+        that:
+          - iso_stat.stat.exists
+          - windows_iso_sha256 | length == 0 or iso_stat.stat.checksum == windows_iso_sha256
+        fail_msg: >-
+          {{ windows_iso_path }} is missing or does not match
+          windows_iso_sha256. Pinning the checksum is the same discipline
+          build_cis_image.yml applies to everything else it pulls.
+      when: windows_build_state == 'present'
+
+    - name: Check virtctl is available
+      # The one local tool this needs. `virtctl image-upload` streams the ISO
+      # through the cdi-uploadproxy Route, which is the supported path for
+      # getting media onto a cluster.
+      ansible.builtin.command: virtctl version --client
+      register: virtctl_check
+      changed_when: false
+      failed_when: virtctl_check.rc != 0
+      when: windows_build_state == 'present'
+
+    # --- Teardown ------------------------------------------------------------
+    - name: Remove the build namespace
+      # Everything this playbook creates lives in one namespace, so teardown is
+      # one delete. wait: false because a namespace with PVCs can take many
+      # minutes to finalize and nothing here needs to watch it go.
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ build_namespace }}"
+        wait: false
+      when: windows_build_state == 'absent'
+
+    - name: Report the teardown
+      ansible.builtin.debug:
+        msg: >-
+          Deleted namespace {{ build_namespace }}. The published containerdisk,
+          if PR 3 has run, is unaffected — that is the point of publishing it.
+      when: windows_build_state == 'absent'
+
+    - name: End the play after teardown
+      ansible.builtin.meta: end_play
+      when: windows_build_state == 'absent'
+
+    # --- Build ---------------------------------------------------------------
+    - name: Create the build namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ build_namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: image-builder-pipeline
+
+    - name: Render the answer file into a ConfigMap
+      # KubeVirt presents a configMap volume to the guest as an iso9660 CD, and
+      # Windows Setup looks for autounattend.xml at the root of removable
+      # media. That is why there is no ISO-authoring tool in this playbook:
+      # the cluster builds the answer disk.
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ build_vm_name }}-autounattend"
+            namespace: "{{ build_namespace }}"
+          data:
+            autounattend.xml: "{{ lookup('ansible.builtin.template', 'templates/autounattend.xml.j2') }}"
+      no_log: true
+
+    - name: Look for an already-uploaded ISO
+      kubernetes.core.k8s_info:
+        api_version: cdi.kubevirt.io/v1beta1
+        kind: DataVolume
+        name: "{{ build_vm_name }}-iso"
+        namespace: "{{ build_namespace }}"
+      register: iso_dv
+
+    - name: Upload the Windows ISO
+      # Idempotent by check, not by flag: re-uploading several GB because a
+      # later task failed would make this playbook painful to iterate on.
+      ansible.builtin.command:
+        argv:
+          - virtctl
+          - image-upload
+          - dv
+          - "{{ build_vm_name }}-iso"
+          - "--namespace={{ build_namespace }}"
+          - "--size={{ windows_iso_size }}"
+          - "--image-path={{ windows_iso_path }}"
+          - "--insecure"
+      register: iso_upload
+      changed_when: iso_upload.rc == 0
+      when: iso_dv.resources | default([]) | length == 0
+
+    - name: Create the Windows build VM
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: kubevirt.io/v1
+          kind: VirtualMachine
+          metadata:
+            name: "{{ build_vm_name }}"
+            namespace: "{{ build_namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: image-builder-pipeline
+              image-factory/os: windows-2022
+              image-factory/eval-expires: "{{ windows_eval_expires }}"
+          spec:
+            running: true
+            instancetype:
+              kind: VirtualMachineClusterInstancetype
+              name: "{{ build_instancetype }}"
+            preference:
+              kind: VirtualMachineClusterPreference
+              name: "{{ build_preference }}"
+            dataVolumeTemplates:
+              - metadata:
+                  name: "{{ build_vm_name }}-root"
+                spec:
+                  source:
+                    blank: {}
+                  storage:
+                    resources:
+                      requests:
+                        storage: "{{ target_disk_size }}"
+            template:
+              metadata:
+                labels:
+                  kubevirt.io/domain: "{{ build_vm_name }}"
+              spec:
+                domain:
+                  devices:
+                    disks:
+                      - name: rootdisk
+                        disk:
+                          bus: "{{ windows_disk_bus }}"
+                        bootOrder: 1
+                      - name: installcd
+                        cdrom:
+                          bus: sata
+                        bootOrder: 2
+                      - name: virtiocd
+                        cdrom:
+                          bus: sata
+                      - name: unattendcd
+                        cdrom:
+                          bus: sata
+                    interfaces:
+                      - name: default
+                        masquerade: {}
+                networks:
+                  - name: default
+                    pod: {}
+                volumes:
+                  - name: rootdisk
+                    dataVolume:
+                      name: "{{ build_vm_name }}-root"
+                  - name: installcd
+                    dataVolume:
+                      name: "{{ build_vm_name }}-iso"
+                  - name: virtiocd
+                    containerDisk:
+                      image: "{{ virtio_win_image }}"
+                  - name: unattendcd
+                    configMap:
+                      name: "{{ build_vm_name }}-autounattend"
+
+    - name: Wait for the VM to start
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachineInstance
+        name: "{{ build_vm_name }}"
+        namespace: "{{ build_namespace }}"
+      register: build_vmi
+      retries: "{{ build_wait_retries }}"
+      delay: "{{ build_wait_delay }}"
+      until:
+        - build_vmi.resources | default([]) | length > 0
+        - build_vmi.resources[0].status.phase | default('') == 'Running'
+
+    - name: Wait for Windows to finish installing
+      # THE GUEST AGENT IS THE SIGNAL, not a timer. It is installed by
+      # FirstLogonCommands, so guestOSInfo appearing means Setup completed, the
+      # machine rebooted into the OS, and the agent came up. A sleep here would
+      # be a guess, and guesses are what make unattended builds flaky.
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachineInstance
+        name: "{{ build_vm_name }}"
+        namespace: "{{ build_namespace }}"
+      register: guest_info
+      retries: "{{ build_wait_retries }}"
+      delay: "{{ build_wait_delay }}"
+      until:
+        - guest_info.resources | default([]) | length > 0
+        - guest_info.resources[0].status.guestOSInfo.id | default('') | length > 0
+      when: not windows_sysprep_at_first_logon
+
+    - name: Wait for the build to sysprep and shut down
+      # With sysprep in the answer file the VM powers itself off when it is
+      # done, so "stopped" is the completion signal. VirtualMachine, not VMI:
+      # the VMI object disappears when the guest halts.
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ build_vm_name }}"
+        namespace: "{{ build_namespace }}"
+      register: build_vm
+      retries: "{{ build_wait_retries }}"
+      delay: "{{ build_wait_delay }}"
+      until:
+        - build_vm.resources | default([]) | length > 0
+        - build_vm.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
+      when: windows_sysprep_at_first_logon
+
+    - name: Report what was built
+      ansible.builtin.debug:
+        msg:
+          - "Windows Server 2022 built in {{ build_namespace }} on {{ k8s_auth_host }}."
+          - "Disk:           {{ build_vm_name }}-root ({{ target_disk_size }})"
+          - "Sysprepped:     {{ windows_sysprep_at_first_logon }}"
+          - "EVAL EXPIRES:   {{ windows_eval_expires }} — put this in the run-sheet."
+          - "Next:           PR 2 hardens it, PR 3 exports and publishes it."
+          - "Tear down with: -e windows_build_state=absent"
