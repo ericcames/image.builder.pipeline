@@ -213,6 +213,24 @@ echo "${K8S_AUTH_HOST:-<unset>}"
 [ -n "$K8S_AUTH_API_KEY" ] && echo "token set" || echo "K8S_AUTH_API_KEY missing"
 [ -n "$WINDOWS_ADMIN_PASSWORD" ] && echo "admin password set" || echo "WINDOWS_ADMIN_PASSWORD missing"
 
+**If any of those three is missing, they are maintained in `sales.demos`** —
+this repo keeps no copy, and design.md §4.1 is the record of that:
+
+| Variable | Source in `sales.demos` |
+|---|---|
+| `K8S_AUTH_HOST` | `inventory/group_vars/sandbox/connection.yml` → `openshift_api_url` |
+| `K8S_AUTH_API_KEY` | vault `playbooks/group_vars/all/secrets.yml` → `env_secrets.sandbox.openshift_api_token` |
+| `WINDOWS_ADMIN_PASSWORD` | vault `playbooks/group_vars/all/secrets.yml` → `windows_admin_password` |
+
+```bash
+ansible-vault view ~/git-repos/sales.demos/playbooks/group_vars/all/secrets.yml \
+  --vault-password-file ~/secrets/.vault_pass_sales_demos
+```
+
+Export them into the shell that runs the playbook. **Do not write them to a
+file** — `sales.demos` allows exactly one secrets file and no sourceable second
+copy, and a plaintext `.env` here would be that second copy.
+
 # 4. virtctl — needed only on the windows_iso_source=upload path
 virtctl version --client >/dev/null 2>&1 && echo "virtctl ok" || echo "virtctl missing"
 

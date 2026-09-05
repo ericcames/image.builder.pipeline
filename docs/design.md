@@ -125,6 +125,35 @@ All credentials are resolved at runtime via environment variables — never stor
 | `QUAY_USERNAME` | `podman login` username | `containerdisk-rebuild.yml` — Quay push |
 | `QUAY_PASSWORD` | `podman login` password | `containerdisk-rebuild.yml` — Quay push |
 
+### 4.1 Where the Windows build's variables come from
+
+The three Windows variables are **maintained in `sales.demos`, not here**, and
+this is the only record of that. Working it out from scratch means searching
+another repo's vault, which has now been done twice.
+
+| Variable | Source in `sales.demos` | |
+|---|---|---|
+| `K8S_AUTH_HOST` | `inventory/group_vars/sandbox/connection.yml` → `openshift_api_url` | committed plaintext |
+| `K8S_AUTH_API_KEY` | `playbooks/group_vars/all/secrets.yml` → `env_secrets.sandbox.openshift_api_token` | vault |
+| `WINDOWS_ADMIN_PASSWORD` | `playbooks/group_vars/all/secrets.yml` → `windows_admin_password` | vault |
+
+The vault password lives outside both repos at
+`~/secrets/.vault_pass_sales_demos`. The API URL embeds a live RHDP cluster ID,
+so it is deliberately **not** reproduced here — read it from the file above,
+which is where it is kept current anyway.
+
+**This does not couple the two repos.** The playbook reads environment variables
+and nothing else; no task loads a vault, and `sales.demos`' secrets mechanism is
+not imported. What is recorded here is where a *human* fills those variables in.
+The distinction matters in both directions: the producer stays runnable by
+someone who has never seen `sales.demos`, and the person who does have it does
+not invent a second copy of a credential that is already maintained.
+
+**Do not materialise them into a committed file.** `sales.demos` deliberately
+allows exactly one secrets file and no sourceable second copy; the same reasoning
+applies here. Export them into the shell that runs the playbook, or pass them
+with `-e`, and let them expire with the process.
+
 The OpenShift variables point at the **sandbox** environment. Builds never run
 against the demo environment — a 45-minute Windows install has no business on a
 cluster someone might be presenting from, and `build_windows_image.yml` asserts
