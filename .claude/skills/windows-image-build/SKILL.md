@@ -222,7 +222,7 @@ ansible-galaxy collection list 2>/dev/null | grep kubernetes.core
 
 ## Run
 
-**Eric runs this himself** — it touches a real cluster and takes about thirty
+**Eric runs this himself** — it touches a real cluster and takes about twenty
 minutes.
 
 ```bash
@@ -234,10 +234,26 @@ ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
   -e windows_eval_expires=$(date -u -d '+180 days' +%Y-%m-%d)
 ```
 
-**Nothing to watch**, which is what #40 bought. Roughly: re-master a few
-minutes, import about two, install about twenty. Anything much past thirty
-minutes is stuck rather than slow — start with the re-master pod's log, then the
-VNC console.
+**Nothing to watch**, which is what #40 bought. **Measured end to end on
+2026-09-05**, on `cluster-kbjvc`, from a clean namespace to a `Stopped`,
+generalized VM:
+
+| Phase | Duration |
+|---|---|
+| Re-master — fetch 4.7 GB, verify sha256, patch El Torito, serve | 2m23s |
+| CDI import from the pod's Service | 2m20s |
+| Install, virtio-win tools, guest agent, sysprep, shutdown | 16m43s |
+| **Total** | **21m26s** |
+
+**Anything much past thirty minutes is stuck, not slow.** Read the console
+percentage twice, minutes apart — if it goes down, Setup is looping and the boot
+order is wrong (see above). Otherwise check the re-master pod's logs.
+
+These numbers replace two earlier guesses of "about forty-five minutes" and
+"about thirty". Both predated any completed run. **The storage is not the
+bottleneck** — an earlier reading of "~3 minutes per percentage point, so
+external Ceph is slow" was computed from three samples assuming monotonic
+progress, and the progress was not monotonic. It was void.
 
 And the teardown, which ships with it:
 
