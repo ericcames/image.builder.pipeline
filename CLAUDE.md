@@ -58,6 +58,14 @@ See `ROADMAP.md` for the full plan.
 - **Document before fixing:** open a GitHub issue before code changes.
 - See `.claude/skills/dev-workflow/SKILL.md` for the full development cycle.
 
+## Skills
+
+| Skill | Purpose |
+|---|---|
+| `.claude/skills/dev-workflow/` | Mandatory development cycle — issue, branch, PR, merge |
+| `.claude/skills/collections-sync/` | Pin, install, verify Ansible collections in `collections/requirements.yml` |
+| `.claude/skills/first-time/` | Prerequisite validation — Hub token, collections, AWS credential pattern |
+
 ## Where things live
 
 | File | Purpose |

@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - CONTRIBUTING.md updated: `main` is now protected, PRs always required
 
 ### Added
+- `.claude/skills/collections-sync/SKILL.md` — pin, install, and verify Ansible collections; audit script detects drift between pinned and installed versions. Closes #27
+- `.claude/skills/first-time/SKILL.md` — prerequisite validation for new sessions: Hub token in `~/.ansible.cfg`, collections, AWS credential pattern, troubleshooting table
+- CLAUDE.md skills table listing all three Claude agent skills
 - `.claude/skills/dev-workflow/SKILL.md` — mandatory development cycle for Claude agents working in this repo
 - CLAUDE.md workflow section — documents protected `main`, branch naming, multi-session safety, standing merge authorization
 - `main` branch protection: required CI checks (`yamllint`, `ansible-lint`), PRs required, enforce admins, no force pushes
