@@ -61,11 +61,27 @@
 
     windows_build_state: "present"
     build_namespace: "image-factory-windows"
+    # Where OpenShift Virtualization lives, for the virtio-win ConfigMap lookup.
+    cnv_namespace: "openshift-cnv"
 
     # --- Inputs --------------------------------------------------------------
-    # The evaluation ISO. NOT fetched automatically: Microsoft's Evaluation
-    # Center requires accepting terms, so a scripted download is both fragile
-    # and arguably beside the point. Supply the path; the checksum is recorded.
+    # HOW THE ISO REACHES THE CLUSTER. Default 'url': CDI's importer pulls it
+    # straight from Microsoft, and the machine running this playbook never
+    # touches the bytes.
+    #
+    # MEASURED 2026-09-04, and the gap is not subtle:
+    #   laptop -> cluster via virtctl upload   ~1 MiB/s     ~75 min
+    #   cluster -> Microsoft via CDI importer  ~246 MiB/s   under 25 s
+    # The first design had this machine download 4.7 GB and push the same 4.7 GB
+    # back up a domestic uplink. Use 'upload' only for a cluster with no egress.
+    windows_iso_source: "url"
+
+    # Microsoft's own fwlink, which redirects to
+    # software-static.download.prss.microsoft.com. Verified to serve
+    # 5,044,094,976 bytes, http 200, from inside the cluster.
+    windows_iso_url: "https://go.microsoft.com/fwlink/p/?LinkID=2195280"
+
+    # Only used when windows_iso_source is 'upload'.
     windows_iso_path: ""
     # Verified 2026-09-04 against the ISO served by
     # https://go.microsoft.com/fwlink/p/?LinkID=2195280 (5,044,094,976 bytes).
@@ -92,7 +108,15 @@
     target_disk_size: "60Gi"
     windows_disk_bus: "virtio"
 
-    virtio_win_image: "registry.redhat.io/container-native-virtualization/virtio-win"
+    # DO NOT HARDCODE THIS. Three traps in one string, and the cluster will tell
+    # you about all of them if you ask (#35):
+    #   - the repo is virtio-win-rhel9, not virtio-win
+    #   - it REFUSES the :latest tag, so an untagged reference fails to pull
+    #   - CNV pins it by digest, and the digest moves with the CNV version
+    # HCO maintains a ConfigMap naming exactly the image it uses, so reading that
+    # is correct on any cluster at any CNV version. Set this only to override,
+    # e.g. for an air-gapped mirror.
+    virtio_win_image: ""
     virtio_drive_letter: "E"
 
     # --- Guest settings, rendered into autounattend.xml ----------------------
@@ -160,10 +184,18 @@
         demo_cluster_marker: "{{ demo_cluster_hostname | default('cluster-6d5xj', true) }}"
       when: windows_build_state == 'present'
 
+    - name: Assert the ISO source is valid
+      ansible.builtin.assert:
+        that:
+          - windows_iso_source in ['url', 'upload']
+        fail_msg: >-
+          windows_iso_source must be 'url' (the cluster fetches it, ~25s) or
+          'upload' (this machine streams it, ~75 min on a domestic uplink).
+
     - name: Assert the build inputs are present
       ansible.builtin.assert:
         that:
-          - windows_iso_path | length > 0
+          - windows_iso_source == 'url' or windows_iso_path | length > 0
           - windows_admin_password | length > 0
           - windows_eval_expires | length > 0
         fail_msg: >-
@@ -179,7 +211,9 @@
         checksum_algorithm: sha256
         get_checksum: "{{ windows_iso_sha256 | length > 0 }}"
       register: iso_stat
-      when: windows_build_state == 'present'
+      when:
+        - windows_build_state == 'present'
+        - windows_iso_source == 'upload'
 
     - name: Assert the ISO exists and matches its checksum when one is given
       ansible.builtin.assert:
@@ -190,7 +224,9 @@
           {{ windows_iso_path }} is missing or does not match
           windows_iso_sha256. Pinning the checksum is the same discipline
           build_cis_image.yml applies to everything else it pulls.
-      when: windows_build_state == 'present'
+      when:
+        - windows_build_state == 'present'
+        - windows_iso_source == 'upload'
 
     - name: Check virtctl is available
       # The one local tool this needs. `virtctl image-upload` streams the ISO
@@ -200,7 +236,9 @@
       register: virtctl_check
       changed_when: false
       failed_when: virtctl_check.rc != 0
-      when: windows_build_state == 'present'
+      when:
+        - windows_build_state == 'present'
+        - windows_iso_source == 'upload'
 
     # --- Teardown ------------------------------------------------------------
     - name: Remove the build namespace
@@ -227,6 +265,31 @@
       when: windows_build_state == 'absent'
 
     # --- Build ---------------------------------------------------------------
+    - name: Look up the virtio-win image this cluster's CNV uses
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: virtio-win
+        namespace: "{{ cnv_namespace }}"
+      register: virtio_cm
+      when: virtio_win_image | length == 0
+
+    - name: Resolve the virtio-win image reference
+      ansible.builtin.set_fact:
+        virtio_win_image_resolved: >-
+          {{ virtio_win_image if virtio_win_image | length > 0
+             else (virtio_cm.resources | default([]) | first | default({})).data['virtio-win-image'] | default('') }}
+
+    - name: Assert the virtio-win image resolved
+      ansible.builtin.assert:
+        that:
+          - virtio_win_image_resolved | length > 0
+        fail_msg: >-
+          Could not resolve the virtio-win image. Expected a ConfigMap named
+          'virtio-win' in {{ cnv_namespace }} carrying a 'virtio-win-image'
+          key, which HCO creates. Pass -e virtio_win_image=<ref> to override.
+        quiet: true
+
     - name: Create the build namespace
       kubernetes.core.k8s:
         state: present
@@ -293,8 +356,51 @@
     # --token would work, and would put the bearer token in the process list
     # where any local user can read it with `ps`. A 0600 kubeconfig deleted in
     # an always: block does not.
-    - name: Upload the Windows ISO
-      when: iso_phase != 'Succeeded'
+    - name: Have the cluster fetch the ISO directly
+      # No virtctl, no kubeconfig, no bytes through this machine. The
+      # bind.immediate annotation is the declarative answer to the same
+      # WaitForFirstConsumer deadlock --force-bind solves on the upload path.
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cdi.kubevirt.io/v1beta1
+          kind: DataVolume
+          metadata:
+            name: "{{ build_vm_name }}-iso"
+            namespace: "{{ build_namespace }}"
+            annotations:
+              cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+          spec:
+            source:
+              http:
+                url: "{{ windows_iso_url }}"
+            storage:
+              resources:
+                requests:
+                  storage: "{{ windows_iso_size }}"
+      when:
+        - windows_iso_source == 'url'
+        - iso_phase != 'Succeeded'
+
+    - name: Wait for the ISO import to finish
+      kubernetes.core.k8s_info:
+        api_version: cdi.kubevirt.io/v1beta1
+        kind: DataVolume
+        name: "{{ build_vm_name }}-iso"
+        namespace: "{{ build_namespace }}"
+      register: iso_import
+      retries: "{{ build_wait_retries }}"
+      delay: "{{ build_wait_delay }}"
+      until: iso_import.resources[0].status.phase | default('') in ['Succeeded', 'Failed']
+      failed_when: iso_import.resources[0].status.phase | default('') == 'Failed'
+      when:
+        - windows_iso_source == 'url'
+        - iso_phase != 'Succeeded'
+
+    - name: Upload the Windows ISO from this machine
+      when:
+        - windows_iso_source == 'upload'
+        - iso_phase != 'Succeeded'
       block:
         - name: Create a temporary kubeconfig for virtctl
           ansible.builtin.tempfile:
@@ -401,13 +507,18 @@
                 domain:
                   devices:
                     disks:
-                      - name: rootdisk
-                        disk:
-                          bus: "{{ windows_disk_bus }}"
-                        bootOrder: 1
+                      # BOOT THE INSTALL CD FIRST. This was the other way round
+                      # and the VM sat at "No bootable option or device was
+                      # found" (#36): EFI tried the blank root disk, found no
+                      # ESP, fell through to the CD, and by then the only thing
+                      # on screen was a prompt nobody could answer.
                       - name: installcd
                         cdrom:
                           bus: sata
+                        bootOrder: 1
+                      - name: rootdisk
+                        disk:
+                          bus: "{{ windows_disk_bus }}"
                         bootOrder: 2
                       - name: virtiocd
                         cdrom:
@@ -430,7 +541,7 @@
                       name: "{{ build_vm_name }}-iso"
                   - name: virtiocd
                     containerDisk:
-                      image: "{{ virtio_win_image }}"
+                      image: "{{ virtio_win_image_resolved }}"
                   - name: unattendcd
                     configMap:
                       name: "{{ build_vm_name }}-autounattend"
