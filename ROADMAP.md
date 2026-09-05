@@ -109,6 +109,7 @@ compliance evidence.
 | Task | Status |
 |------|--------|
 | Unattended install + virtio drivers + QEMU guest agent | **In progress** — `playbooks/build_windows_image.yml` ([#24](https://github.com/ericcames/image.builder.pipeline/issues/24) PR 1); built on the cluster via plain KubeVirt VMs, no operator installed |
+| ISO re-mastered onto `efisys_noprompt.bin` in a cluster pod — the build needs nobody at the console | **Done** — [#40](https://github.com/ericcames/image.builder.pipeline/issues/40); `playbooks/scripts/remaster_iso.sh`, Red Hat's `modify-windows-iso-file` recipe |
 | ansible-lockdown/Windows-2022-CIS hardening with patch tags | Pending |
 | WinRM over HTTPS on 5986 (consumer contract) | Pending |
 | Audit-tag evidence capture | Pending |

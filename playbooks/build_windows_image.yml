@@ -32,6 +32,12 @@
 # on a cluster anyone might present from. The artifact is published to quay, so
 # the demo environment consumes a tag and never hosts a build.
 #
+# THE BUILD NEEDS NO ONE AT THE CONSOLE (#40). The stock ISO's UEFI boot image
+# asks "Press any key to boot from CD or DVD" and fails silently when nobody
+# answers, so a pod on the cluster re-masters the media onto Microsoft's own
+# efisys_noprompt.bin before CDI imports it. Pass -e windows_iso_remaster=false
+# to go back to the stock ISO and a keypress.
+#
 # WHAT THIS DOES NOT DO YET, and where it lands:
 #   PR 2 — ansible-lockdown/Windows-2022-CIS hardening + audit-tag evidence.
 #          It sets windows_sysprep_at_first_logon=false and syspreps itself,
@@ -91,6 +97,42 @@
     # if Microsoft refreshes the media.
     windows_iso_sha256: "3e4fa6d8507b554856fc9ca6079cc402df11a8b79344871669f0251535255325"
     windows_iso_size: "8Gi"
+
+    # --- Removing the last manual step (#40) ---------------------------------
+    # THE STOCK ISO WILL NOT BOOT UNATTENDED. Microsoft's UEFI boot image asks
+    # "Press any key to boot from CD or DVD" with a ~5 second timeout, and when
+    # nobody answers it the console simply sits there — so a build that needs a
+    # human looks exactly like a build that is merely slow. It cost a wasted
+    # 25-minute run before anyone noticed.
+    #
+    # Microsoft ships efisys_noprompt.bin beside efisys.bin for exactly this,
+    # and Red Hat's windows-efi-installer pipeline swaps it in the same way, so
+    # this is the sanctioned fix rather than a trick. A pod on the cluster does
+    # the swap and serves the result to CDI: the 4.7 GB never crosses the slow
+    # link (#36), and the proven source.http import path is unchanged — only
+    # the URL differs.
+    windows_iso_remaster: true
+    remaster_name: "{{ build_vm_name }}-remaster"
+    remaster_url: >-
+      http://{{ remaster_name }}.{{ build_namespace }}.svc:{{ iso_remaster_port
+      }}/{{ iso_remaster_filename }}
+
+    # quay.io/kubevirt/tekton-tasks:v0.26.0 — the image behind Red Hat's own
+    # modify-windows-iso-file task, which already carries xorriso, curl and
+    # python3 and runs unprivileged. Pinned by digest on the same reasoning
+    # execution-environment.yml pins its base: a tag is a moving target, and a
+    # factory that cannot say what it consumed cannot say what it produced.
+    iso_remaster_image: >-
+      quay.io/kubevirt/tekton-tasks@sha256:87743fb600a52ee23ef8f673d286610fc0396e94790f2a9a38887329f1ff7445
+
+    # A PVC, NOT AN emptyDir. Peak use is the extracted tree plus the rebuilt
+    # ISO, roughly twice the media — about 9.4 GB. An emptyDir spends the
+    # node's ephemeral storage, and crossing that line evicts the pod under
+    # disk pressure, which reads as an unexplained restart rather than as "out
+    # of space". Deleted as soon as the import succeeds.
+    iso_remaster_scratch_size: "20Gi"
+    iso_remaster_port: 8080
+    iso_remaster_filename: "windows-2022-noprompt.iso"
 
     # THE 180-DAY CLOCK. Evaluation media expires, and an expired Windows guest
     # nags and then shuts down hourly — mid-demo, if nobody wrote the date down.
@@ -191,6 +233,21 @@
         fail_msg: >-
           windows_iso_source must be 'url' (the cluster fetches it, ~25s) or
           'upload' (this machine streams it, ~75 min on a domestic uplink).
+
+    - name: Assert the re-master and the ISO source agree
+      # The re-master happens in a pod that fetches from windows_iso_url, so it
+      # cannot touch a file that exists only on this machine. Saying so out
+      # loud beats ignoring windows_iso_remaster quietly and leaving someone
+      # waiting at a console for a prompt they were told had been removed.
+      ansible.builtin.assert:
+        that:
+          - not (windows_iso_remaster | bool) or windows_iso_source == 'url'
+        fail_msg: >-
+          windows_iso_remaster needs windows_iso_source=url. On the 'upload'
+          path the media reaches the cluster only as an already-imported disk,
+          so pass -e windows_iso_remaster=false and expect to press a key at
+          the console when Setup asks (#40).
+      when: windows_build_state == 'present'
 
     - name: Assert the build inputs are present
       ansible.builtin.assert:
@@ -326,15 +383,46 @@
         namespace: "{{ build_namespace }}"
       register: iso_dv
 
-    - name: Decide whether the ISO still needs uploading
-      # EXISTENCE IS NOT SUCCESS, and testing the wrong one is how a build ends
-      # up installing from an empty disk. A failed `virtctl image-upload` leaves
-      # the DataVolume behind in PendingPopulation, so a re-run that only asked
-      # "does it exist?" would skip the upload and carry on with nothing in it.
+    - name: Read what the existing ISO import actually holds
+      # TWO WAYS THIS GOES WRONG, and both of them look like success.
+      #
+      # EXISTENCE IS NOT SUCCESS. A failed `virtctl image-upload` leaves the
+      # DataVolume behind in PendingPopulation, so a re-run that only asked
+      # "does it exist?" would skip the upload and install from an empty disk.
+      #
+      # NOR IS SUCCESS THE SAME AS THE RIGHT MEDIA (#40). A DataVolume imported
+      # before the re-master existed holds the *prompting* ISO: Succeeded, right
+      # size, and a build that uses it stops dead at the console. Phase alone
+      # cannot tell those apart, so the variant is written onto the DataVolume
+      # as an annotation and a mismatch re-imports. A DataVolume carrying no
+      # annotation at all — anything imported before this existed — counts as a
+      # mismatch and is re-imported. That costs about two minutes once, and it
+      # is the right way round to be wrong.
       ansible.builtin.set_fact:
         iso_phase: "{{ (iso_dv.resources | default([]) | first | default({})).status.phase | default('') }}"
+        iso_variant_have: >-
+          {{ (iso_dv.resources | default([]) | first
+              | default({})).metadata.annotations['image-factory/iso-variant']
+             | default('') }}
+        iso_variant_want: "{{ 'noprompt' if windows_iso_remaster | bool else 'stock' }}"
 
-    - name: Remove a partially-uploaded ISO DataVolume
+    - name: Settle whether the imported ISO can be reused
+      ansible.builtin.set_fact:
+        iso_reusable: "{{ iso_phase == 'Succeeded' and iso_variant_have == iso_variant_want }}"
+
+    - name: Settle whether the re-master has to run
+      ansible.builtin.set_fact:
+        remaster_needed: "{{ windows_iso_remaster | bool and not iso_reusable | bool }}"
+
+    - name: Report which media the build will use
+      ansible.builtin.debug:
+        msg: >-
+          ISO: {{ 'reusing the imported ' ~ iso_variant_have ~ ' media'
+                  if iso_reusable | bool
+                  else 'importing ' ~ iso_variant_want ~ ' media' }}{{
+            ' (re-mastering it on the cluster first)' if remaster_needed | bool else '' }}
+
+    - name: Remove an ISO DataVolume that cannot be reused
       kubernetes.core.k8s:
         state: absent
         api_version: cdi.kubevirt.io/v1beta1
@@ -344,7 +432,207 @@
         wait: true
       when:
         - iso_dv.resources | default([]) | length > 0
-        - iso_phase != 'Succeeded'
+        - not iso_reusable | bool
+
+    - name: Re-master the ISO so no one has to press a key
+      # RUNS ON THE CLUSTER, NEVER HERE. Measured (#36): the cluster pulls this
+      # ISO at ~246 MiB/s and a laptop pushes at ~1 MiB/s, so re-mastering
+      # locally would mean a 4.7 GB upload and would undo the whole reason
+      # windows_iso_source defaults to 'url'.
+      #
+      # The pod fetches the stock ISO, verifies windows_iso_sha256, swaps
+      # efisys_noprompt.bin / cdboot_noprompt.efi over their prompting twins,
+      # rebuilds the ISO and serves it over HTTP. CDI then imports from the
+      # Service instead of from Microsoft — one URL different, everything
+      # downstream identical and already verified.
+      when: remaster_needed | bool
+      block:
+        - name: Create the scratch volume for the re-master
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: PersistentVolumeClaim
+              metadata:
+                name: "{{ remaster_name }}"
+                namespace: "{{ build_namespace }}"
+                labels:
+                  app.kubernetes.io/managed-by: image-builder-pipeline
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                # Explicit, because a storage class is free to default this to
+                # Block and the pod needs a filesystem to write files into.
+                volumeMode: Filesystem
+                resources:
+                  requests:
+                    storage: "{{ iso_remaster_scratch_size }}"
+
+        - name: Publish the re-master script as a ConfigMap
+          # The script is a file in this repo rather than a heredoc inside a
+          # pod spec inside a playbook, so it can be read, diffed and run
+          # locally against a test ISO. It takes its inputs from the
+          # environment, which is why it needs no templating.
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: "{{ remaster_name }}"
+                namespace: "{{ build_namespace }}"
+              data:
+                remaster_iso.sh: "{{ lookup('ansible.builtin.file', 'scripts/remaster_iso.sh') }}"
+
+        - name: Start the re-master pod
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: "{{ remaster_name }}"
+                namespace: "{{ build_namespace }}"
+                labels:
+                  app: "{{ remaster_name }}"
+                  app.kubernetes.io/managed-by: image-builder-pipeline
+              spec:
+                # Never, not OnFailure: a restart would silently re-download
+                # 4.7 GB and hide whatever went wrong the first time. A failed
+                # pod is left for its log to be read.
+                restartPolicy: Never
+                containers:
+                  - name: remaster
+                    image: "{{ iso_remaster_image }}"
+                    command:
+                      - /bin/bash
+                      - /opt/remaster/remaster_iso.sh
+                    env:
+                      - name: ISO_URL
+                        value: "{{ windows_iso_url }}"
+                      - name: ISO_SHA256
+                        value: "{{ windows_iso_sha256 }}"
+                      - name: OUT_NAME
+                        value: "{{ iso_remaster_filename }}"
+                      - name: PORT
+                        value: "{{ iso_remaster_port | string }}"
+                      - name: SCRATCH
+                        value: /scratch
+                    # BARE, NOT `| int`. Measured: Ansible hands a nested
+                    # "{{ x }}" to the module as the int 8080, and a nested
+                    # "{{ x | int }}" as the STRING '8080' — the opposite of
+                    # what the filter name suggests. containerPort is int32 and
+                    # both probe and Service ports are IntOrString, where a
+                    # string means a *named* port, so the wrong one here does
+                    # not error: the probe simply never passes.
+                    ports:
+                      - containerPort: "{{ iso_remaster_port }}"
+                    # READINESS IS THE COMPLETION SIGNAL. The script writes
+                    # /ready only after the finished ISO has been renamed into
+                    # the served directory, so a passing probe means "complete
+                    # ISO", not "process alive" — and the Service has no
+                    # endpoints until then, so CDI cannot reach a partial file
+                    # even if something asked it to.
+                    readinessProbe:
+                      httpGet:
+                        path: /ready
+                        port: "{{ iso_remaster_port }}"
+                      initialDelaySeconds: 20
+                      periodSeconds: 10
+                      failureThreshold: 300
+                    resources:
+                      requests:
+                        cpu: 500m
+                        memory: 1Gi
+                      limits:
+                        cpu: "2"
+                        memory: 4Gi
+                    # Matches OpenShift's restricted-v2 SCC, and mirrors Red
+                    # Hat's own task. xorriso needs no privilege; guestfish,
+                    # which that task uses to read the ISO, would have wanted
+                    # devices.kubevirt.io/kvm.
+                    securityContext:
+                      runAsNonRoot: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+                      seccompProfile:
+                        type: RuntimeDefault
+                    volumeMounts:
+                      - name: scratch
+                        mountPath: /scratch
+                      - name: script
+                        mountPath: /opt/remaster
+                volumes:
+                  - name: scratch
+                    persistentVolumeClaim:
+                      claimName: "{{ remaster_name }}"
+                  - name: script
+                    configMap:
+                      name: "{{ remaster_name }}"
+
+        - name: Expose the re-master pod to CDI
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: "{{ remaster_name }}"
+                namespace: "{{ build_namespace }}"
+              spec:
+                selector:
+                  app: "{{ remaster_name }}"
+                ports:
+                  - name: http
+                    port: "{{ iso_remaster_port }}"
+                    targetPort: "{{ iso_remaster_port }}"
+
+        - name: Wait for the re-mastered ISO to be served
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            name: "{{ remaster_name }}"
+            namespace: "{{ build_namespace }}"
+          register: remaster_pod
+          retries: "{{ build_wait_retries }}"
+          delay: "{{ build_wait_delay }}"
+          until:
+            - remaster_pod.resources | default([]) | length > 0
+            - >-
+              remaster_pod.resources[0].status.phase | default('') in ['Failed', 'Succeeded']
+              or (remaster_pod.resources[0].status.conditions | default([])
+                  | selectattr('type', 'equalto', 'Ready')
+                  | selectattr('status', 'equalto', 'True')
+                  | list | length > 0)
+          # A pod that has EXITED has failed, whichever phase it reports: the
+          # script serves the ISO forever on success, so Succeeded here means
+          # the HTTP server died.
+          failed_when:
+            - remaster_pod.resources | default([]) | length > 0
+            - remaster_pod.resources[0].status.phase | default('') in ['Failed', 'Succeeded']
+
+      rescue:
+        - name: Read the re-master pod's log
+          kubernetes.core.k8s_log:
+            api_version: v1
+            kind: Pod
+            name: "{{ remaster_name }}"
+            namespace: "{{ build_namespace }}"
+          register: remaster_log
+          failed_when: false
+
+        - name: Report the re-master failure with its log
+          # The log is the whole diagnosis — a missing efisys_noprompt.bin, a
+          # checksum mismatch and a short extraction all fail here with
+          # different messages, and none of them reach the recap otherwise.
+          ansible.builtin.fail:
+            msg: >-
+              The ISO re-master did not produce a servable ISO. The pod is left
+              in place for inspection; clear it with
+              -e windows_build_state=absent. Log follows.
+              {{ remaster_log.log | default('(no log available)') }}
 
     # VIRTCTL DOES NOT READ K8S_AUTH_*. Those are the python client's variables,
     # consumed by kubernetes.core. virtctl is a Go client: it reads a kubeconfig
@@ -370,17 +658,21 @@
             namespace: "{{ build_namespace }}"
             annotations:
               cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+              # WHICH MEDIA THIS DISK HOLDS. Read back on the next run, because
+              # phase alone cannot tell a re-mastered import from a stock one
+              # and both report Succeeded (#40).
+              image-factory/iso-variant: "{{ iso_variant_want }}"
           spec:
             source:
               http:
-                url: "{{ windows_iso_url }}"
+                url: "{{ remaster_url | trim if remaster_needed | bool else windows_iso_url }}"
             storage:
               resources:
                 requests:
                   storage: "{{ windows_iso_size }}"
       when:
         - windows_iso_source == 'url'
-        - iso_phase != 'Succeeded'
+        - not iso_reusable | bool
 
     - name: Wait for the ISO import to finish
       kubernetes.core.k8s_info:
@@ -395,12 +687,12 @@
       failed_when: iso_import.resources[0].status.phase | default('') == 'Failed'
       when:
         - windows_iso_source == 'url'
-        - iso_phase != 'Succeeded'
+        - not iso_reusable | bool
 
     - name: Upload the Windows ISO from this machine
       when:
         - windows_iso_source == 'upload'
-        - iso_phase != 'Succeeded'
+        - not iso_reusable | bool
       block:
         - name: Create a temporary kubeconfig for virtctl
           ansible.builtin.tempfile:
@@ -467,6 +759,44 @@
             state: absent
           when: virtctl_kubeconfig.path is defined
           changed_when: false
+
+    - name: Record which media the imported ISO holds
+      # virtctl creates the DataVolume itself on the upload path, so the
+      # annotation cannot be set at creation there; patching here covers both
+      # paths with one task. A run that dies between a successful import and
+      # this patch simply re-imports next time — two minutes, and the right way
+      # round to be wrong.
+      kubernetes.core.k8s:
+        state: patched
+        api_version: cdi.kubevirt.io/v1beta1
+        kind: DataVolume
+        name: "{{ build_vm_name }}-iso"
+        namespace: "{{ build_namespace }}"
+        definition:
+          metadata:
+            annotations:
+              image-factory/iso-variant: "{{ iso_variant_want }}"
+      when:
+        - windows_build_state == 'present'
+        - not iso_reusable | bool
+
+    - name: Remove the re-master pod, service, script and scratch volume
+      # The media now lives in the DataVolume. Leaving a pod behind holding
+      # 20 GiB of scratch and a second copy of it serves nothing, and the VM
+      # about to start wants the memory.
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: "{{ item }}"
+        name: "{{ remaster_name }}"
+        namespace: "{{ build_namespace }}"
+        wait: true
+      loop:
+        - Pod
+        - Service
+        - ConfigMap
+        - PersistentVolumeClaim
+      when: remaster_needed | bool
 
     - name: Create the Windows build VM
       kubernetes.core.k8s:
@@ -609,6 +939,11 @@
         msg:
           - "Windows Server 2022 built in {{ build_namespace }} on {{ k8s_auth_host }}."
           - "Disk:           {{ build_vm_name }}-root ({{ target_disk_size }})"
+          - >-
+            Media:          {{ iso_variant_want }} ISO —
+            {{ 're-mastered on the cluster, no keypress needed'
+               if iso_variant_want == 'noprompt'
+               else 'WATCH THE CONSOLE, Setup asks for a keypress' }}
           - "Sysprepped:     {{ windows_sysprep_at_first_logon }}"
           - "EVAL EXPIRES:   {{ windows_eval_expires }} — put this in the run-sheet."
           - "Next:           PR 2 hardens it, PR 3 exports and publishes it."
