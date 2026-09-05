@@ -1,6 +1,6 @@
 ---
 name: windows-image-build
-description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers where the media comes from, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, finds one sitting at \"Press any key to boot from CD or DVD\", or has a build that runs for hours with the Setup progress bar moving and never finishes. SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
+description: "Build the CIS-hardened Windows Server 2022 golden image on OpenShift Virtualization, for publication as a containerDisk that sales.demos consumes. Covers where the media comes from, the unattended build, and the 180-day expiry that has to travel with the artifact. Runs playbooks/build_windows_image.yml, then playbooks/publish_windows_containerdisk.yml to export and publish it. TRIGGER when: the user asks to build, rebuild or publish the Windows image, asks about the Windows containerDisk, autounattend, virtio drivers or sysprep, asks where the Windows ISO comes from, asks whether the evaluation media has expired, hits a build that hangs on the edition-selection screen, finds one sitting at \"Press any key to boot from CD or DVD\", has a build that runs for hours with the Setup progress bar moving and never finishes, or wants to export the finished disk and publish it as a containerDisk. SKIP: if the user wants to point a cluster AT an already-published image — that is the consumer half, sales.demos#3 and its ocpvirt-windows-image skill — or wants the RHEL AMI pipeline, which is build_cis_image.yml."
 ---
 
 # windows-image-build
@@ -21,7 +21,7 @@ quay repo.
 | PR 1 — unattended build on the cluster | **Merged** (#29) |
 | No keypress — re-master the ISO onto `efisys_noprompt.bin` | **Merged** ([#40](https://github.com/ericcames/image.builder.pipeline/issues/40)) |
 | PR 2 — `ansible-lockdown/Windows-2022-CIS` hardening + audit evidence | Not started |
-| PR 3 — export, containerdisk wrap, `podman push`, `design.md` §10 | Not started |
+| PR 3 — export, containerdisk wrap, `podman push`, `design.md` §10 | **Merged** |
 
 Tracked in [#24](https://github.com/ericcames/image.builder.pipeline/issues/24).
 
@@ -322,9 +322,68 @@ virtctl vnc win2k22-build -n image-factory-windows
 | Re-master pod never becomes Ready | Still downloading (`-c fetch`), or libguestfs is booting its appliance (`-c remaster`) | `oc logs -f win2k22-build-remaster -c fetch -n image-factory-windows` |
 | Re-master fails with "the bytes at LBA … are not efi/microsoft/boot/efisys.bin" | A different medium, laid out differently | Deliberate refusal, not a bug. Nothing was written. Re-check `windows_iso_url` and `windows_iso_sha256` |
 
+## Publishing it — `publish_windows_containerdisk.yml`
+
+Once the build reports `Stopped`, the disk is exported off the cluster and
+wrapped as a containerDisk.
+
+```bash
+# 1. build the image locally and look at it. The push is a SEPARATE flag.
+ansible-playbook -i inventories/sample/ \
+  playbooks/publish_windows_containerdisk.yml \
+  -e windows_eval_expires=2027-03-04
+
+# 2. publish it, once you are happy
+ansible-playbook -i inventories/sample/ \
+  playbooks/publish_windows_containerdisk.yml \
+  -e windows_eval_expires=2027-03-04 -e containerdisk_push=true
+```
+
+**The repository must exist and be private before you push.** Windows evaluation
+media cannot be redistributed. The playbook refuses to push to a public
+repository and re-checks afterwards, but a repository created *by* the push did
+not exist to be checked beforehand — so create
+`quay.io/zigfreed/win2k22-golden` as **Private** in the Quay UI first.
+
+**It is `win2k22-golden`, not `win2k22-cis-l1-golden`.** What this publishes is
+the *unhardened* build, and tags are immutable — a repository name claiming L1
+would make that claim for ever on media that never had it. PR 2 publishes
+`win2k22-cis-l1-golden` separately.
+
+### What it needs
+
+| | |
+|---|---|
+| `podman login quay.io` | Asserted, never scripted — this repo does not handle registry credentials |
+| `skopeo` | Checks the tag does not already exist. Tags are immutable |
+| Free space | **~26 GiB peak**, asserted before anything downloads. Default `output_dir` is inside the repo; pass `-e output_dir=/somewhere/roomier` if that is a small filesystem |
+| `windows_eval_expires` | Required, and stamped on the image as `image-factory/eval-expires` |
+
+### Measured, first real export
+
+| | |
+|---|---|
+| `disk.img.gz` from the export proxy | 4.6 GB at ~15 MB/s |
+| Sparse raw | 60 GiB apparent, **8.7 GiB on disk** |
+| qcow2 | **8.65 GiB** |
+| Push at ~5 MB/s | roughly 30 minutes |
+
+### Three things the export will catch you with
+
+- **It offers every volume the VM had**, the install ISO included. The playbook
+  selects the root volume by name — taking the first would publish a Windows
+  *installer* as a golden image, and it would look plausible until someone
+  booted it.
+- **The token secret's name is in `status.tokenSecretRef`, not `spec`.**
+  `virtctl` sets `spec` itself, so checking by hand with `virtctl` proves
+  nothing about what a playbook creating the export directly will see.
+- **Download `gzip`, never `raw`** — 4.6 GB against 60 GB — and expand it with
+  `dd conv=sparse` or a 60 GiB hole-free file lands on your laptop.
+
 ## Where this sits
 
 1. **This skill** — build the image on sandbox.
 2. PR 2 — harden it with `ansible-lockdown/Windows-2022-CIS`, capture audit evidence.
-3. PR 3 — export, wrap as a containerdisk, push to private quay.
+3. **This skill** — export, wrap as a containerdisk, push to private quay.
 4. `sales.demos` `ocpvirt-windows-image` — point a cluster at the published tag.
+   Set `quay_windows_image` to the tag this printed.
