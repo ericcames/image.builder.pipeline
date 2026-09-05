@@ -101,10 +101,26 @@ ansible-playbook playbooks/build_cis_containerdisk.yml
 Generated `data.json` files are written to `output/<platform>/data.json` and
 should be copied into the appropriate `golden_images/` path in `rego_policy_libraries`.
 
-## Related Projects
+## Related repositories
 
-- [rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries) — OPA policy library this pipeline feeds
-- [sales.demos](https://github.com/ericcames/sales.demos) — Demo platform; AMI and containerDisk consumer
+This repo is the **producer**. Both links below are consumers — the dependency
+runs outward from here.
+
+| Repo | Receives | Contract |
+|---|---|---|
+| [sales.demos](https://github.com/ericcames/sales.demos) | RHEL AMIs and the Windows Server 2022 containerDisk | AMI tags (`docs/design.md` §9); a containerdisk tag for Windows |
+| [rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries) | `data.json` compliance data under `golden_images/` | `docs/design.md` §6 |
+
+**The Windows golden image is deliberately split across two repos.** Building and
+publishing it is [#24](https://github.com/ericcames/image.builder.pipeline/issues/24)
+here; pointing a cluster at the published image is
+[sales.demos#3](https://github.com/ericcames/sales.demos/issues/3), which has
+shipped and is waiting on a tag. **The only thing binding them is one string — a
+containerdisk tag in a private quay repo.**
+
+That split is the rule in `CLAUDE.md`: *"Producer/consumer across repos is
+intentional. Different audiences, different lifecycles."* Hardening and
+compliance evidence belong here; running demos belongs there.
 
 ## License
 

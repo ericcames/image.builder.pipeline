@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- `README.md` "Related Projects" renamed to **Related repositories** and rewritten to say what each consumer *receives* and which way the dependency runs, rather than listing them in bare lines. Names the Windows producer/consumer split explicitly: building the image is #24 here, pointing a cluster at it is [sales.demos#3](https://github.com/ericcames/sales.demos/issues/3), and the only thing binding them is one string -- a containerdisk tag. Reciprocal to [sales.demos#204](https://github.com/ericcames/sales.demos/pull/204), so the link works both ways. Closes #38
+
 ### Fixed
 - **`spec.running: true` restarted the VM after sysprep, booting the generalized image into OOBE** (#37). `running` is a *desired state*, not one-shot: when the guest powered itself off at the end of `sysprep /generalize /oobe /shutdown`, KubeVirt started it straight back up. **This is the most dangerous defect found so far, because it produces a disk that looks fine and is not** — OOBE consumes the generalization, and a "golden image" that was never generalized surfaces much later as cloned VMs colliding on SIDs and machine names. Caught only because someone had the console open. Replaced with `runStrategy: Once`, which starts the VMI exactly once and leaves the VM `Stopped` when the guest halts — also making "wait for Stopped" a real completion signal rather than a race it could never win.
 
