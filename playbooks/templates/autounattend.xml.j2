@@ -192,37 +192,46 @@
         <SynchronousCommand wcm:action="add"
                             xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
           <Order>5</Order>
-          <Description>Delete the answer file Windows Setup cached</Description>
+          <Description>Delete the cached answer file and log the result (#69)</Description>
           <!-- WITHOUT THIS, EVERY CLONE IGNORES THE CONSUMER'S SYSPREP CD (#59).
                Windows Setup caches the answer file it used into %WINDIR%\Panther
                at the start of each configuration pass. Microsoft's implicit
                search order puts that cache at precedence 3, ahead of removable
                media at 4 and read-only removable media at 5 — and 5 is exactly
-               where KubeVirt's sysprep API presents the consumer's CD. So a
-               clone finds THIS build's answer file first and specializes from
-               it, landing on the OOBE region screen instead of the consumer's
-               ComputerName and local admin. sales.demos' plumbing was verified
-               correct and still never got read.
+               where KubeVirt's sysprep API presents the consumer's CD.
+
+               THE CMD APPROACH FROM #60 DID NOT WORK. The del ran, had
+               permissions (proved by a clone test), and left the file untouched.
+               2>nul & exit /b 0 discarded the only evidence that would say why.
+               This replaces it with PowerShell Remove-Item and logs before/after
+               state to C:\Windows\Temp\panther-delete.log so a rebuild answers
+               the question. Order 6 asserts the file is gone and fails the
+               build if not — the guard #60 should have shipped with.
 
                NOT INSIDE THE SYSPREP FLAG BELOW, DELIBERATELY. The hardening
                work sets windows_sysprep_at_first_logon=false and syspreps later
-               over WinRM; that path needs the cache gone just as much, and
-               nothing after first logon re-caches it. Guarding this would mean
-               rediscovering #59 the first time an image is hardened.
-
-               Ordering is load-bearing: after the marker at 4 so the playbook's
-               completion signal is unaffected, before sysprep at 6 because
-               generalize re-caches whatever is still there.
+               over WinRM; that path needs the cache gone just as much.
 
                It also stops shipping windows_admin_password in clear text
-               inside the published containerDisk, which Microsoft gives as the
-               other reason this cleanup is mandatory before delivery. -->
-          <CommandLine>cmd /c "del /f /q C:\Windows\Panther\unattend.xml C:\Windows\Panther\Autounattend.xml C:\Windows\Panther\Unattend\unattend.xml C:\Windows\Panther\Unattend\Autounattend.xml C:\Windows\System32\Sysprep\unattend.xml 2&gt;nul &amp; exit /b 0"</CommandLine>
+               inside the published containerDisk. -->
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $log = 'C:\Windows\Temp\panther-delete.log'; $f = 'C:\Windows\Panther\unattend.xml'; '=== Before ===' | Out-File $log; 'exists={0}' -f (Test-Path $f) | Out-File $log -Append; if (Test-Path $f) { Get-Item $f | Format-List Name,Length,LastWriteTime,Attributes | Out-File $log -Append }; '=== Delete ===' | Out-File $log -Append; try { Remove-Item -Force -ErrorAction Stop $f; 'Remove-Item succeeded' | Out-File $log -Append } catch { 'Remove-Item failed: {0}' -f $_ | Out-File $log -Append }; '=== After ===' | Out-File $log -Append; 'exists={0}' -f (Test-Path $f) | Out-File $log -Append; if (Test-Path $f) { Get-Item $f | Format-List Name,Length,LastWriteTime,Attributes | Out-File $log -Append; Get-Acl $f | Format-List | Out-File $log -Append }; Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Windows\Panther\Autounattend.xml','C:\Windows\Panther\Unattend\unattend.xml','C:\Windows\Panther\Unattend\Autounattend.xml','C:\Windows\System32\Sysprep\unattend.xml' }"</CommandLine>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>6</Order>
+          <Description>Assert the cached answer file is gone (#69)</Description>
+          <!-- THE GUARD #60 SHOULD HAVE SHIPPED WITH. If the file survives the
+               delete, this stops FirstLogonCommands — sysprep never runs, the
+               VM stays up, the build times out, and the broken image never
+               publishes. Read C:\Windows\Temp\panther-delete.log via WinRM or
+               offline with qemu-nbd (docs/design.md §10.2.2). -->
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { if (Test-Path 'C:\Windows\Panther\unattend.xml') { 'ASSERT FAILED: cached answer file still present after delete' | Out-File 'C:\Windows\Temp\panther-delete.log' -Append; exit 1 } }"</CommandLine>
         </SynchronousCommand>
 {% if windows_sysprep_at_first_logon %}
         <SynchronousCommand wcm:action="add"
                             xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-          <Order>6</Order>
+          <Order>7</Order>
           <Description>Generalize and shut down</Description>
           <!-- FLAG-GUARDED ON PURPOSE. Sysprep here means the build needs no
                WinRM round-trip to finish, which is what keeps PR 1 free of the
