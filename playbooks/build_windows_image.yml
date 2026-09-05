@@ -499,6 +499,7 @@
                 name: "{{ remaster_name }}"
                 namespace: "{{ build_namespace }}"
               data:
+                fetch_iso.sh: "{{ lookup('ansible.builtin.file', 'scripts/fetch_iso.sh') }}"
                 remaster_iso.sh: "{{ lookup('ansible.builtin.file', 'scripts/remaster_iso.sh') }}"
 
         - name: Start the re-master pod
@@ -518,22 +519,52 @@
                 # 4.7 GB and hide whatever went wrong the first time. A failed
                 # pod is left for its log to be read.
                 restartPolicy: Never
-                # TWO CONTAINERS, AND THE SPLIT IS THE DESIGN (#44). Patching
-                # needs guestfish, which needs the KVM device to read UDF at
-                # any speed; serving needs python3, which the guestfish image
-                # does not have. An initContainer runs to completion first, so
-                # the server only ever starts on a finished medium.
+                # THREE STAGES, AND EACH IMAGE DOES ONLY WHAT IT CAN (#44, #46).
+                # Fetching needs a CA bundle, which the guestfish image does not
+                # ship — every HTTPS download from it fails with curl error 77.
+                # Patching needs guestfish, which needs the KVM device to read
+                # UDF. Serving needs python3, which the guestfish image does not
+                # have either. initContainers run to completion in order, so the
+                # server only ever starts on a finished, verified medium.
                 initContainers:
+                  - name: fetch
+                    image: "{{ iso_serve_image }}"
+                    command:
+                      - /bin/bash
+                      - /opt/remaster/fetch_iso.sh
+                    env:
+                      - name: ISO_URL
+                        value: "{{ windows_iso_url }}"
+                      - name: ISO_SHA256
+                        value: "{{ windows_iso_sha256 }}"
+                      - name: SCRATCH
+                        value: /scratch
+                    resources:
+                      requests:
+                        cpu: 200m
+                        memory: 256Mi
+                      limits:
+                        cpu: "2"
+                        memory: 1Gi
+                    securityContext:
+                      runAsNonRoot: true
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop:
+                          - ALL
+                      seccompProfile:
+                        type: RuntimeDefault
+                    volumeMounts:
+                      - name: scratch
+                        mountPath: /scratch
+                      - name: script
+                        mountPath: /opt/remaster
                   - name: remaster
                     image: "{{ iso_remaster_image }}"
                     command:
                       - /bin/bash
                       - /opt/remaster/remaster_iso.sh
                     env:
-                      - name: ISO_URL
-                        value: "{{ windows_iso_url }}"
-                      - name: ISO_SHA256
-                        value: "{{ windows_iso_sha256 }}"
                       - name: OUT_NAME
                         value: "{{ iso_remaster_filename }}"
                       - name: SCRATCH
@@ -669,29 +700,38 @@
             - remaster_pod.resources[0].status.phase | default('') in ['Failed', 'Succeeded']
 
       rescue:
-        - name: Read the re-master pod's log
-          # The initContainer by name: with two containers the API refuses an
-          # unqualified request, and the patch is where failures happen — the
-          # server never starts if it did not finish.
+        - name: Read the re-master pod's logs
+          # BOTH initContainers, by name. The API refuses an unqualified request
+          # once a pod has more than one container, and either stage can be the
+          # one that failed — a bad checksum stops in 'fetch', a medium that is
+          # not what it claims stops in 'remaster'. Asking for only one would
+          # hand back an empty log for half the failures.
           kubernetes.core.k8s_log:
             api_version: v1
             kind: Pod
             name: "{{ remaster_name }}"
             namespace: "{{ build_namespace }}"
-            container: remaster
+            container: "{{ item }}"
           register: remaster_log
           failed_when: false
+          loop:
+            - fetch
+            - remaster
 
-        - name: Report the re-master failure with its log
-          # The log is the whole diagnosis — a missing efisys_noprompt.bin, a
-          # checksum mismatch and a short extraction all fail here with
+        - name: Report the re-master failure with its logs
+          # The log is the whole diagnosis — a checksum mismatch, a missing
+          # efisys_noprompt.bin, boot images of unequal size and an El Torito
+          # address that does not hold the prompting image all fail with
           # different messages, and none of them reach the recap otherwise.
           ansible.builtin.fail:
             msg: >-
               The ISO re-master did not produce a servable ISO. The pod is left
               in place for inspection; clear it with
-              -e windows_build_state=absent. Log follows.
-              {{ remaster_log.log | default('(no log available)') }}
+              -e windows_build_state=absent. Logs follow.
+              {% for r in remaster_log.results | default([]) %}
+              --- {{ r.item }} ---
+              {{ r.log | default('(no log available)') }}
+              {% endfor %}
 
     # VIRTCTL DOES NOT READ K8S_AUTH_*. Those are the python client's variables,
     # consumed by kubernetes.core. virtctl is a Go client: it reads a kubeconfig

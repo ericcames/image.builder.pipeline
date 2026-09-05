@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # ===========================================================================
 # remaster_iso.sh — make a Windows installation ISO boot without a keypress.
-# Runs in a pod on the build cluster; never on a laptop. Leaves the finished
-# medium in $SCRATCH/serve for a sibling container to serve over HTTP.
-# See image.builder.pipeline#40 and #44.
+# Runs on the build cluster; never on a laptop. Takes the ISO that fetch_iso.sh
+# has already downloaded and verified, and leaves the finished medium in
+# $SCRATCH/serve for a sibling container to serve over HTTP.
+# See image.builder.pipeline#40, #44 and #46.
 #
 # WHY A POD AND NOT THIS MACHINE. Measured (#36): the cluster pulls this ISO at
 # ~246 MiB/s and a laptop pushes at ~1 MiB/s. Re-mastering locally would mean a
 # 4.7 GB upload — about 75 minutes — and would undo the whole reason
 # windows_iso_source defaults to 'url'.
+#
+# WHY IT DOES NOT FETCH (#46). This image ships no CA bundle, so any HTTPS
+# download from it fails with curl error 77. Downloading is fetch_iso.sh's job,
+# on an image that can do it.
 #
 # WHY guestfish AND NOT xorriso (#44). The real Windows Server 2022 medium is
 # **UDF**, not ISO 9660 — `guestfish ... list-filesystems` says `/dev/sda: udf`,
@@ -33,14 +38,11 @@
 # mis-parsed catalogue cannot corrupt the medium — it fails instead.
 #
 # Inputs, all from the environment so this file needs no templating:
-#   ISO_URL      required — where to fetch the stock ISO
-#   ISO_SHA256   optional — checksum of the stock ISO, verified before use
 #   OUT_NAME     required — filename to leave the re-mastered ISO under
 #   SCRATCH      optional — working directory, default /scratch
 # ===========================================================================
 set -euo pipefail
 
-: "${ISO_URL:?ISO_URL must be set}"
 : "${OUT_NAME:?OUT_NAME must be set}"
 SCRATCH="${SCRATCH:-/scratch}"
 
@@ -56,18 +58,10 @@ export HOME="${WORK}"
 
 fatal() { echo "FATAL: $*" >&2; exit 1; }
 
-rm -rf "${WORK}" "${SERVE}"
-mkdir -p "${WORK}" "${SERVE}"
-
-echo "==> fetching ${ISO_URL}"
-curl -fL --retry 3 --retry-delay 5 -o "${SRC}" "${ISO_URL}"
+[ -s "${SRC}" ] || fatal "${SRC} is missing. fetch_iso.sh runs before this and
+should have left it there."
 SRC_BYTES=$(stat -c %s "${SRC}")
-echo "==> fetched ${SRC_BYTES} bytes"
-
-if [ -n "${ISO_SHA256:-}" ]; then
-    echo "==> verifying sha256"
-    echo "${ISO_SHA256}  ${SRC}" | sha256sum -c -
-fi
+echo "==> working on ${SRC}, ${SRC_BYTES} bytes"
 
 echo "==> reading the boot images out of the medium"
 guestfish --ro -a "${SRC}" -m /dev/sda <<EOF || fatal "could not mount the ISO. Expected a Windows installation medium readable as UDF or ISO 9660."
