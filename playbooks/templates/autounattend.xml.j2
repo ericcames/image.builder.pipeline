@@ -189,10 +189,40 @@
                guess is what makes an unattended build flaky. -->
           <CommandLine>cmd /c "echo done &gt; C:\Windows\Temp\{{ build_marker_file }}"</CommandLine>
         </SynchronousCommand>
-{% if windows_sysprep_at_first_logon %}
         <SynchronousCommand wcm:action="add"
                             xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
           <Order>5</Order>
+          <Description>Delete the answer file Windows Setup cached</Description>
+          <!-- WITHOUT THIS, EVERY CLONE IGNORES THE CONSUMER'S SYSPREP CD (#59).
+               Windows Setup caches the answer file it used into %WINDIR%\Panther
+               at the start of each configuration pass. Microsoft's implicit
+               search order puts that cache at precedence 3, ahead of removable
+               media at 4 and read-only removable media at 5 — and 5 is exactly
+               where KubeVirt's sysprep API presents the consumer's CD. So a
+               clone finds THIS build's answer file first and specializes from
+               it, landing on the OOBE region screen instead of the consumer's
+               ComputerName and local admin. sales.demos' plumbing was verified
+               correct and still never got read.
+
+               NOT INSIDE THE SYSPREP FLAG BELOW, DELIBERATELY. The hardening
+               work sets windows_sysprep_at_first_logon=false and syspreps later
+               over WinRM; that path needs the cache gone just as much, and
+               nothing after first logon re-caches it. Guarding this would mean
+               rediscovering #59 the first time an image is hardened.
+
+               Ordering is load-bearing: after the marker at 4 so the playbook's
+               completion signal is unaffected, before sysprep at 6 because
+               generalize re-caches whatever is still there.
+
+               It also stops shipping windows_admin_password in clear text
+               inside the published containerDisk, which Microsoft gives as the
+               other reason this cleanup is mandatory before delivery. -->
+          <CommandLine>cmd /c "del /f /q C:\Windows\Panther\unattend.xml C:\Windows\Panther\Autounattend.xml C:\Windows\Panther\Unattend\unattend.xml C:\Windows\Panther\Unattend\Autounattend.xml C:\Windows\System32\Sysprep\unattend.xml 2&gt;nul &amp; exit /b 0"</CommandLine>
+        </SynchronousCommand>
+{% if windows_sysprep_at_first_logon %}
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>6</Order>
           <Description>Generalize and shut down</Description>
           <!-- FLAG-GUARDED ON PURPOSE. Sysprep here means the build needs no
                WinRM round-trip to finish, which is what keeps PR 1 free of the
