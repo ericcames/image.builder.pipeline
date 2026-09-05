@@ -66,6 +66,7 @@ image and pushed to `quay.io/zigfreed/rhel9-cis-l1-golden:<date>`. See
 | OCI label contract (parallel to AMI tags) | Complete |
 | `docs/design.md` §10 — containerDisk contract | Complete |
 | End-to-end smoke test: compose → download → build → push → consumer pull | Complete (2026-09-05, tag `20260905-0411`) |
+| Monthly scheduled rebuild via GitHub Actions (`containerdisk-rebuild.yml`) | Complete (#48) |
 
 ---
 
@@ -134,7 +135,7 @@ Platforms from `rego_policy_libraries` design doc, prioritized by demand:
 
 ## Future Considerations
 
-- **Scheduled rebuilds** — rebuild and re-scan on a cadence to catch CIS benchmark updates and base image refreshes. AAP workflow.
+- **Scheduled rebuilds (AMI pipeline)** — extend monthly cadence to AMI builds once containerDisk scheduling is proven. AAP workflow for builds requiring persistent infrastructure.
 - **CVE threshold automation** — integrate with Red Hat Security API to populate `cvss_deny_threshold`.
 - **SBOM generation** — produce and sign SBOMs at build time, populate `sbom_ref`.
 - **Multi-region AMI publishing** — promote validated AMIs across AWS regions.
