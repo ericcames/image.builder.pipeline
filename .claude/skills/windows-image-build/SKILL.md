@@ -110,8 +110,10 @@ Hat's `modify-windows-iso-file` uses it and asks for `devices.kubevirt.io/kvm`.
   `image-factory/iso-variant: noprompt|stock`. **A `Succeeded` import of the
   wrong variant is re-imported** — phase alone cannot tell a re-mastered disk
   from a prompting one, and both report success.
-- The pod runs an initContainer (`remaster`, guestfish + the KVM device) and
-  then a `serve` container (python3). The KVM device is an extended resource
+- The pod runs three stages, because no single image can do all of it: `fetch`
+  (curl + checksum, on `tekton-tasks` — the guestfish image ships **no CA
+  bundle**), `remaster` (guestfish + the KVM device), then `serve` (python3,
+  which the guestfish image also lacks). The KVM device is an extended resource
   from KubeVirt's device plugin, **not** a privileged securityContext — the pod
   still runs under `restricted-v2` as an arbitrary non-root UID.
 - The pod, its Service, its ConfigMap and its scratch PVC are deleted as soon as
@@ -246,8 +248,8 @@ virtctl vnc win2k22-build -n image-factory-windows
 | `virtctl image-upload` fails | `cdi-uploadproxy` Route unreachable | `oc get route cdi-uploadproxy -n openshift-cnv` |
 | Build refuses to start, naming the demo cluster | `K8S_AUTH_HOST` points at demo | Intentional. Builds run on sandbox. |
 | Console sits at "Press any key to boot from CD or DVD" | The import holds stock media, not re-mastered | Check the `iso-variant` annotation above; re-run with `windows_iso_remaster=true` |
-| Playbook stops on the re-master with a pod log attached | The re-master failed — bad checksum, no `efisys_noprompt.bin`, boot images of unequal size, or the bytes at the El Torito address were not the prompting image | The log names which. The pod is left in place; `oc logs win2k22-build-remaster -c remaster -n image-factory-windows` |
-| Re-master pod never becomes Ready | Still fetching, or libguestfs is booting its appliance | `oc logs -f win2k22-build-remaster -c remaster -n image-factory-windows` |
+| Playbook stops on the re-master with pod logs attached | The re-master failed — bad checksum, no `efisys_noprompt.bin`, boot images of unequal size, or the bytes at the El Torito address were not the prompting image | Both initContainer logs are in the failure. The pod is left in place; `oc logs win2k22-build-remaster -c fetch` and `-c remaster` |
+| Re-master pod never becomes Ready | Still downloading (`-c fetch`), or libguestfs is booting its appliance (`-c remaster`) | `oc logs -f win2k22-build-remaster -c fetch -n image-factory-windows` |
 | Re-master fails with "the bytes at LBA … are not efi/microsoft/boot/efisys.bin" | A different medium, laid out differently | Deliberate refusal, not a bug. Nothing was written. Re-check `windows_iso_url` and `windows_iso_sha256` |
 
 ## Where this sits
