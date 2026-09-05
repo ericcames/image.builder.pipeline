@@ -157,10 +157,35 @@ Expected output for guest-image:
 If the field path is wrong, fix the `options.get("url")` line in
 `wait_for_compose.py` (around line 115) to match the actual response.
 
-## Run
+## Scheduled builds
 
-**Eric runs this himself** — it hits the Red Hat Image Builder API and pushes
-to Quay.
+A GitHub Actions workflow rebuilds the containerDisk **monthly** — 1st of every
+month at 06:00 UTC. No operator intervention needed.
+
+| Detail | Value |
+|---|---|
+| Workflow | `.github/workflows/containerdisk-rebuild.yml` |
+| Schedule | `0 6 1 * *` (1st of month, 06:00 UTC) |
+| Manual trigger | `workflow_dispatch` — Actions tab or `gh workflow run "Rebuild RHEL 9 CIS containerDisk"` |
+| Runner | `ubuntu-latest` (podman pre-installed) |
+
+Three GitHub repo secrets power the scheduled build:
+
+| Secret | Source |
+|---|---|
+| `RH_OFFLINE_TOKEN` | Red Hat SSO offline token from `~/.ansible.cfg` |
+| `QUAY_USERNAME` | Quay.io username (`zigfreed`) |
+| `QUAY_PASSWORD` | Quay.io password or robot account token |
+
+Check last run: `gh run list --workflow=containerdisk-rebuild.yml --limit 5`
+
+See [docs/operations.md](../../docs/operations.md) for secret rotation and
+troubleshooting.
+
+## Run (manual)
+
+Builds also run manually from Eric's workstation — same playbook the scheduled
+workflow uses.
 
 ```bash
 # QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
