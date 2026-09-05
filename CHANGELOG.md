@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- `.claude/skills/windows-image-build/SKILL.md` — the Windows build had no skill, so its preflight existed only as asserts inside the playbook, discovered one failure at a time. Covers acquiring the media, the run, verification that asks the cluster rather than trusting the recap, and the teardown. Closes #30
+- `playbooks/scripts/wim_images.py` — prints the image names inside a `.wim` by parsing the WIM header's XML resource. **`windows_image_name` must match one of those names exactly**; get it wrong and Windows Setup stops on the edition-selection screen, which reads as a hang because there is no console output to explain it.
+- `README.md` now lists the four skills. There was no skills section at all, despite three already existing.
+
+### Changed
+- `windows_iso_sha256` now **defaults to the verified checksum** rather than empty, on the same reasoning `execution-environment.yml` pins terraform: a factory that does not know what it consumed cannot say what it produced. Pass `-e windows_iso_sha256=''` to skip.
+- `build_windows_image.yml` records the four WIM images the evaluation ISO actually contains, so the `windows_image_name` default is documented as verified rather than assumed.
+
+### Verified
+- Windows Server 2022 evaluation ISO, from Microsoft's own fwlink (`LinkID=2195280`, redirecting to `software-static.download.prss.microsoft.com`): **5,044,094,976 bytes**, SHA256 `3e4fa6d8507b554856fc9ca6079cc402df11a8b79344871669f0251535255325`, volume `SSS_X64FREE_EN-US_DV9`.
+- `sources/install.wim` holds 4 images. `Windows Server 2022 SERVERSTANDARD` is index 2, the Desktop Experience variant — which is what the playbook already defaulted to, now confirmed instead of guessed. Every `EDITIONID` is `ServerStandardEval` / `ServerDatacenterEval`, which is how evaluation media is told apart from licensed media at a glance.
+- The full preflight chain runs green against the real ISO — state, connection, demo-cluster refusal, inputs, checksum match, `virtctl` — failing only at the first cluster API call, which is as far as it can get without a live cluster.
+
+### Added
 - `playbooks/build_windows_image.yml` + `playbooks/templates/autounattend.xml.j2` — unattended Windows Server 2022 build for the Phase 3 containerDisk. **PR 1 of 3 on #24: build only, unhardened.** Hardening is PR 2, export and publish are PR 3.
 - **Built on the cluster, not on a laptop.** #21 flags "a local libvirt/KVM scan path — new hypervisor dependency" as its High-risk item; a KubeVirt cluster *is* a hypervisor, so this avoids that dependency rather than incurring it, and the image is exercised by KubeVirt before any consumer sees it. Plain `VirtualMachine` objects driven with `kubernetes.core`, the same way this repo already drives EC2 with `amazon.aws` — **no operator is installed**, so there is no cross-repo dependency on the consumer's cluster configuration.
 - **The answer file is delivered as a ConfigMap.** KubeVirt renders a `configMap` volume as an iso9660 CD and Windows Setup reads `autounattend.xml` from removable media, so no ISO-authoring tool is needed on the machine running the playbook.
