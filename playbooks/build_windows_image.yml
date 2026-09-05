@@ -482,7 +482,17 @@
               image-factory/os: windows-2022
               image-factory/eval-expires: "{{ windows_eval_expires }}"
           spec:
-            running: true
+            # runStrategy Once, NOT running: true (#37). With `running: true`
+            # KubeVirt restarts the VM whenever the guest powers off — so
+            # sysprep's /shutdown was undone within seconds, the generalized
+            # image booted straight into OOBE, and completing that screen would
+            # have consumed the generalization and silently turned the golden
+            # image into an ordinary specialized machine.
+            #
+            # `Once` starts the VMI exactly once and leaves the VM Stopped when
+            # the guest halts, which is also what makes "wait for Stopped" a
+            # real completion signal rather than a race.
+            runStrategy: Once
             instancetype:
               kind: VirtualMachineClusterInstancetype
               name: "{{ build_instancetype }}"
