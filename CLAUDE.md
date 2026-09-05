@@ -11,7 +11,8 @@ scans them with OpenSCAP, and produces structured compliance data.
 |---|---|---|---|
 | [`rego_policy_libraries`](https://github.com/ynotbhatc/rego_policy_libraries) | `data.json` files under `golden_images/` | Schema in `docs/design.md` §6 | OPA policy / compliance |
 | [`sales.demos`](https://github.com/ericcames/sales.demos) | AMIs, via `data.aws_ami` tag-filter | `Pipeline` + `OS` + `CIS-Level` tags (§9) | Demo platform |
-| [`sales.demos`](https://github.com/ericcames/sales.demos) | Windows containerDisk on Quay.io | One string — a containerdisk tag | OpenShift Virt demos |
+| [`sales.demos`](https://github.com/ericcames/sales.demos) | RHEL 9 containerDisk on Quay.io | One string — a containerdisk tag (§10) | OpenShift Virt demos |
+| [`sales.demos`](https://github.com/ericcames/sales.demos) | Windows containerDisk on Quay.io | One string — a containerdisk tag (§10) | OpenShift Virt demos |
 
 If a change works for one consumer but breaks another, it doesn't ship.
 
@@ -44,6 +45,7 @@ If a change works for one consumer but breaks another, it doesn't ship.
 
 - Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
 - Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
+- Phase 1.7 (RHEL 9 containerDisk) — playbook and tooling complete; end-to-end smoke test pending. See `docs/design.md` §10 for the containerDisk contract.
 - Phase 2 (CIS L2, RHEL 8) — not started
 - Phase 3 (Windows containerDisk) — direction set: CIS-hardened Windows Server 2022 as containerDisk on Quay.io (#21). Producer work is #24, **in this repo** (transferred from `sales.demos#193`); consumer is `sales.demos#3`, already shipped.
 
@@ -71,13 +73,14 @@ See `ROADMAP.md` for the full plan.
 | File | Purpose |
 |---|---|
 | `playbooks/build_cis_image.yml` | Image Builder API integration, AMI compose |
+| `playbooks/build_cis_containerdisk.yml` | Image Builder guest-image → containerDisk → Quay push |
 | `playbooks/deploy_and_scan.yml` | EC2 deploy, SCAP result extraction |
 | `playbooks/generate_policy_data.yml` | XCCDF → `data.json`; merges curated + auto-emitted exempts |
 | `playbooks/scripts/wait_for_compose.py` | Token-refreshing Image Builder poll helper (#4) |
 | `playbooks/tasks/cleanup_aws.yml` | AWS teardown, included from scan play's `always:` (#6) |
 | `playbooks/vars/exempt_controls.yml` | Curated exempt entries with canonical reasons |
 | `playbooks/filter_plugins/xccdf.py` | XCCDF parser; emits score, severity breakdown, P3 candidates |
-| `docs/design.md` | Full design — §5 exempt controls, §6 OPA consumer, §9 downstream consumers + AMI contract |
+| `docs/design.md` | Full design — §5 exempt controls, §6 OPA consumer, §9 AMI contract, §10 containerDisk contract |
 | `docs/cis-l1-rhel9-status.md` | Latest validated compliance snapshot |
 | `inventories/sample/` | Template inventory; copy to `inventories/<customer>-<platform>/` |
 | `output/<platform>/` | Per-platform outputs: `build_output.json`, `scap/`, `data.json` |

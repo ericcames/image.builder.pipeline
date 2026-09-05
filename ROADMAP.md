@@ -46,6 +46,29 @@ marketplace AMIs. See `docs/design.md` §9 for the contract.
 
 ---
 
+## Phase 1.7 — RHEL 9 CIS L1 containerDisk ([#21](https://github.com/ericcames/image.builder.pipeline/issues/21))
+
+**Target:** Same CIS-hardened RHEL 9 image, wrapped as a containerDisk for
+OpenShift Virtualization. Pushed to private Quay.io repo for consumption by
+[`sales.demos`](https://github.com/ericcames/sales.demos) via `DataImportCron`.
+
+Uses the same Image Builder API with `image_type: "guest-image"` to produce a
+qcow2 download instead of an AMI. The qcow2 is wrapped as an OCI container
+image and pushed to `quay.io/zigfreed/rhel9-cis-l1-golden:<date>`. See
+`docs/design.md` §10 for the containerDisk contract.
+
+| Task | Status |
+|------|--------|
+| Image Builder API integration for guest-image (qcow2) output | Complete |
+| `wait_for_compose.py` polymorphic output for guest-image | Complete |
+| `build_cis_containerdisk.yml` playbook | Complete |
+| containerDisk build + Quay push workflow | Complete |
+| OCI label contract (parallel to AMI tags) | Complete |
+| `docs/design.md` §10 — containerDisk contract | Complete |
+| End-to-end smoke test: compose → download → build → push → consumer pull | Pending |
+
+---
+
 ## Phase 2 — CIS L2 and RHEL family expansion
 
 **Target:** CIS Level 2 Server option for workloads; RHEL 8 mirrored.

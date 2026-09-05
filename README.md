@@ -8,9 +8,10 @@ scanning with OpenSCAP, and generating structured policy compliance data for
 
 This pipeline automates three stages:
 
-1. **Build** — trigger a CIS-hardened image compose via the Red Hat Image Builder API
-2. **Scan** — deploy the image to AWS and extract OpenSCAP results
+1. **Build** — trigger a CIS-hardened image compose via the Red Hat Image Builder API (AMI or qcow2)
+2. **Scan** — deploy the image to AWS and extract OpenSCAP results (AMI path)
 3. **Generate** — parse SCAP results into `data.json` policy data files
+4. **containerDisk** — wrap qcow2 as a containerDisk and push to Quay.io for OpenShift Virtualization
 
 The output feeds directly into the `golden_images/` policy module in `rego_policy_libraries`,
 populating approved baseline values, exempt controls, and compliance thresholds.
@@ -20,24 +21,27 @@ populating approved baseline values, exempt controls, and compliance thresholds.
 ```
 Red Hat Image Builder (console.redhat.com)
         │
-        ▼ AMI
-   AWS EC2 (temp instance)
-        │
-        ▼ SCAP results (/root/openscap_data/)
-   OpenSCAP Parser
-        │
-        ▼
-   data.json → rego_policy_libraries/golden_images/
+        ├──────────────────────────┐
+        ▼ AMI                     ▼ qcow2
+   AWS EC2 (temp instance)   containerDisk wrap
+        │                         │
+        ▼ SCAP results            ▼ podman push
+   OpenSCAP Parser           Quay.io (private)
+        │                         │
+        ▼                         ▼
+   data.json → rego_policy    DataImportCron →
+   _libraries/golden_images/  OpenShift Virt VMs
 ```
 
 ## Supported Platforms
 
-| Platform | CIS Benchmark | Status |
-|----------|--------------|--------|
-| RHEL 9 | CIS Level 1 Server | **Phase 1 — Complete** (score 98.07 / 95 gate — see [status](docs/cis-l1-rhel9-status.md)) |
-| RHEL 8 | CIS Level 1 Server | Phase 2 |
-| RHEL 10 | CIS Level 1 Server | Phase 2 — pending benchmark |
-| Windows Server 2022 | CIS Level 1 | Phase 3 |
+| Platform | Output | CIS Benchmark | Status |
+|----------|--------|--------------|--------|
+| RHEL 9 | AMI | CIS Level 1 Server | **Phase 1 — Complete** (score 98.07 / 95 gate — see [status](docs/cis-l1-rhel9-status.md)) |
+| RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Smoke test pending** |
+| RHEL 8 | AMI | CIS Level 1 Server | Phase 2 |
+| RHEL 10 | AMI | CIS Level 1 Server | Phase 2 — pending benchmark |
+| Windows Server 2022 | containerDisk | CIS Level 1 | Phase 3 |
 
 See [ROADMAP.md](ROADMAP.md) for full platform schedule and
 [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
@@ -68,6 +72,8 @@ ansible-galaxy collection install -r collections/requirements.yml -p ./collectio
 
 ## Quick Start
 
+### AMI pipeline (AWS)
+
 ```bash
 cp -r inventories/sample/ inventories/<customer>-<platform>/
 
@@ -76,10 +82,17 @@ export AWS_SECRET_ACCESS_KEY=<secret>
 export AWS_DEFAULT_REGION=us-east-1
 export AWS_ACCOUNT_ID=<your_aws_account_id>
 
-# Full pipeline
 ansible-playbook -i inventories/<customer>-<platform>/ playbooks/build_cis_image.yml
 ansible-playbook -i inventories/<customer>-<platform>/ playbooks/deploy_and_scan.yml
 ansible-playbook -i inventories/<customer>-<platform>/ playbooks/generate_policy_data.yml
+```
+
+### containerDisk pipeline (OpenShift Virt)
+
+```bash
+podman login quay.io                  # one-time setup
+# QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
+ansible-playbook playbooks/build_cis_containerdisk.yml
 ```
 
 ## Output

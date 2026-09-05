@@ -9,14 +9,17 @@ the token and subsequent polls 401.
 
 This script refreshes the access token on every iteration, polls the
 Image Builder API, and exits when the compose reaches a terminal state.
-Stdout is a JSON document: {"compose_id", "ami_id", "region", "status"}.
+
+Output varies by compose type:
+  AMI:         {"compose_id", "ami_id", "region", "status"}
+  guest-image: {"compose_id", "image_url", "image_type", "status"}
 
 Inputs:
     argv[1]            compose ID (UUID)
     RH_OFFLINE_TOKEN   env var, offline token used to mint access tokens
 
 Exit codes:
-    0   compose succeeded; AMI details on stdout
+    0   compose succeeded; details on stdout
     1   compose failed at Image Builder; reason on stderr
     2   polling timed out without reaching a terminal state
     3   bad input / unrecoverable HTTP error
@@ -111,19 +114,35 @@ def main() -> int:
             upload = body["image_status"].get("upload_status", {})
             options = upload.get("options", {})
             ami_id = options.get("ami")
-            region = options.get("region")
-            if not ami_id:
-                fail(3, "compose succeeded but no AMI ID in upload_status")
-            print(
-                json.dumps(
-                    {
-                        "compose_id": compose_id,
-                        "ami_id": ami_id,
-                        "region": region,
-                        "status": status,
-                    }
+            image_url = options.get("url")
+            if ami_id:
+                print(
+                    json.dumps(
+                        {
+                            "compose_id": compose_id,
+                            "ami_id": ami_id,
+                            "region": options.get("region"),
+                            "status": status,
+                        }
+                    )
                 )
-            )
+            elif image_url:
+                print(
+                    json.dumps(
+                        {
+                            "compose_id": compose_id,
+                            "image_url": image_url,
+                            "image_type": "guest-image",
+                            "status": status,
+                        }
+                    )
+                )
+            else:
+                fail(
+                    3,
+                    "compose succeeded but upload_status.options has "
+                    f"neither 'ami' nor 'url': {json.dumps(options)}",
+                )
             return 0
 
         if status == "failure":
