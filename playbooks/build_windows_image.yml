@@ -67,7 +67,13 @@
     # Center requires accepting terms, so a scripted download is both fragile
     # and arguably beside the point. Supply the path; the checksum is recorded.
     windows_iso_path: ""
-    windows_iso_sha256: ""
+    # Verified 2026-09-04 against the ISO served by
+    # https://go.microsoft.com/fwlink/p/?LinkID=2195280 (5,044,094,976 bytes).
+    # Pinned rather than blank, on the same reasoning execution-environment.yml
+    # pins terraform: a factory that does not know what it consumed cannot say
+    # what it produced. Pass -e windows_iso_sha256='' to skip, or the new value
+    # if Microsoft refreshes the media.
+    windows_iso_sha256: "3e4fa6d8507b554856fc9ca6079cc402df11a8b79344871669f0251535255325"
     windows_iso_size: "8Gi"
 
     # THE 180-DAY CLOCK. Evaluation media expires, and an expired Windows guest
@@ -90,6 +96,14 @@
     virtio_drive_letter: "E"
 
     # --- Guest settings, rendered into autounattend.xml ----------------------
+    # MUST match a WIM image name in the ISO exactly, or Setup stops on the
+    # edition-selection screen — which reads as a hang, because there is no
+    # console output to explain it. Verified 2026-09-04 with
+    # playbooks/scripts/wim_images.py against the ISO above; it holds 4 images:
+    #   1 SERVERSTANDARDCORE    Standard Evaluation
+    #   2 SERVERSTANDARD        Standard Evaluation (Desktop Experience)  <-- this
+    #   3 SERVERDATACENTERCORE  Datacenter Evaluation
+    #   4 SERVERDATACENTER      Datacenter Evaluation (Desktop Experience)
     windows_image_name: "Windows Server 2022 SERVERSTANDARD"
     windows_computer_name: "WIN2K22GOLD"
     windows_ui_language: "en-US"

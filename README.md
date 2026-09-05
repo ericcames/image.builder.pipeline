@@ -43,6 +43,17 @@ See [ROADMAP.md](ROADMAP.md) for full platform schedule and
 [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
 latest RHEL 9 compliance snapshot.
 
+## Claude skills
+
+Workflows in this repo are packaged as skills under `.claude/skills/`.
+
+| Skill | Does |
+|---|---|
+| `first-time` | Validates every local prerequisite on a new machine |
+| `collections-sync` | Pins, installs and verifies the Ansible collections |
+| `dev-workflow` | The mandatory issue → branch → PR → merge cycle |
+| `windows-image-build` | Builds the Windows Server 2022 containerDisk (Phase 3) |
+
 ## Prerequisites
 
 - Red Hat account with Image Builder access (console.redhat.com)
