@@ -2,3 +2,10 @@
 collections:
   - name: amazon.aws
     version: "11.2.0"
+
+  # OpenShift / KubeVirt — the Windows containerDisk build (#24) drives plain
+  # VirtualMachine objects through the API, the same way this repo drives EC2
+  # with amazon.aws. Pinned to match sales.demos so the producer and consumer
+  # cannot disagree about the client library.
+  - name: kubernetes.core
+    version: "6.4.0"

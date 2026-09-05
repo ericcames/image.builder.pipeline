@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `playbooks/build_windows_image.yml` + `playbooks/templates/autounattend.xml.j2` — unattended Windows Server 2022 build for the Phase 3 containerDisk. **PR 1 of 3 on #24: build only, unhardened.** Hardening is PR 2, export and publish are PR 3.
+- **Built on the cluster, not on a laptop.** #21 flags "a local libvirt/KVM scan path — new hypervisor dependency" as its High-risk item; a KubeVirt cluster *is* a hypervisor, so this avoids that dependency rather than incurring it, and the image is exercised by KubeVirt before any consumer sees it. Plain `VirtualMachine` objects driven with `kubernetes.core`, the same way this repo already drives EC2 with `amazon.aws` — **no operator is installed**, so there is no cross-repo dependency on the consumer's cluster configuration.
+- **The answer file is delivered as a ConfigMap.** KubeVirt renders a `configMap` volume as an iso9660 CD and Windows Setup reads `autounattend.xml` from removable media, so no ISO-authoring tool is needed on the machine running the playbook.
+- **Sysprep is flag-guarded.** `windows_sysprep_at_first_logon` defaults true so PR 1 finishes without a WinRM round trip and stays free of the Windows collections. PR 2 sets it false and syspreps after hardening — generalizing first would throw the hardening away.
+- `collections/requirements.yml` pins `kubernetes.core` 6.4.0, matching sales.demos so producer and consumer cannot disagree about the client library.
+- `docs/design.md` §4 documents `K8S_AUTH_HOST`, `K8S_AUTH_API_KEY` and `WINDOWS_ADMIN_PASSWORD` — env vars, consistent with the model that section already states. Nothing is read from sales.demos' vault.
+- **The playbook refuses to build on the demo cluster.** Builds run on sandbox; demo consumes the published tag and never hosts a build. Asserted rather than merely documented, because a 45-minute Windows install on a cluster someone is presenting from is the mistake worth making impossible.
+- **`windows_eval_expires` is required.** Evaluation media expires after 180 days and an expired Windows guest nags and then shuts down hourly. The date is asserted, stamped onto the VM as a label, and printed at the end so it reaches the run-sheet.
+
 ### Fixed
 - `ROADMAP.md` Phase 3 and `CLAUDE.md` tracked the Windows producer as `sales.demos#193`. That issue was **transferred into this repo** and is now [#24](https://github.com/ericcames/image.builder.pipeline/issues/24), so the roadmap asserted "permanent home is this repo" while the tracker pointed elsewhere. GitHub redirects a transferred issue so neither link was broken, but the reference read as "the work lives in the other repo" — the opposite of the decision Phase 3 records — and sent a reader out of this repository to be bounced back into it. `sales.demos` updated its 24 references in its PR #200. Closes #25
 - `build_cis_image.yml` token lookup path — was reading from frozen `~/.ansible/ansible.cfg` (stale Oct 2025 token) instead of active `~/.ansible.cfg`. Latent bug that would 401 on next token rotation. Closes #22
