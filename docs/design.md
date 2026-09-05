@@ -300,3 +300,74 @@ stacks) happen **on top** via the consumer's existing setup playbooks
 - **Satellite host (Layer 1):** CIS L1 only. L2 firewall/service tightening fights Satellite's installer (requires ports 80, 443, 5647, 8000, 8140, 9090 open and several services running).
 - **RHEL workload nodes (Layer 3):** L1 baseline; L2 available per workload group as L2 builds mature.
 - **F5 / Palo Alto / Infoblox:** Out of scope — appliance AMIs come from AWS Marketplace, not this pipeline.
+
+---
+
+## 10. containerDisk contract — OpenShift Virtualization
+
+A second delivery path, parallel to AMIs (§9). The pipeline produces qcow2 images
+via Image Builder's `guest-image` type, wraps them as OCI container images
+(containerDisks), and pushes to a private Quay.io repository. OpenShift
+Virtualization consumes them via `DataImportCron`.
+
+### 10.1 Distribution model
+
+| Property | Value |
+|----------|-------|
+| Registry | `quay.io/zigfreed/` (private repos) |
+| RHEL 9 repo | `quay.io/zigfreed/rhel9-cis-l1-golden` |
+| Tag format | `YYYYMMDD-HHMM` (e.g. `20260904-0100`) |
+| Tag policy | Date-based, immutable, never overwritten |
+| Disk format | qcow2 at `/disk/disk.img` inside the container image |
+
+Tags are immutable — once pushed, a tag is never reused. Consumers pin to a
+specific tag and update it deliberately. This matches the Windows containerDisk
+convention from Phase 3 (#24).
+
+### 10.2 OCI labels — the containerDisk tagging contract
+
+Parallel to the AMI tagging contract in §9.2. OCI labels provide the same
+traceability metadata in container-native format:
+
+| Label | Value | Purpose |
+|---|---|---|
+| `com.redhat.cis.pipeline` | `image-builder-pipeline` | Provenance |
+| `com.redhat.cis.os` | `rhel9` | OS identifier |
+| `com.redhat.cis.level` | `L1` | CIS benchmark level |
+| `com.redhat.cis.compose-id` | Image Builder compose UUID | Traceability |
+| `org.opencontainers.image.created` | ISO 8601 timestamp | Build date |
+| `org.opencontainers.image.source` | Repository URL | Source repo |
+
+### 10.3 Consumer discovery
+
+Unlike AMI tag-based filtering (§9.1), containerDisk discovery uses a single
+string reference — the full Quay image tag (e.g.
+`quay.io/zigfreed/rhel9-cis-l1-golden:20260904-0100`). The consumer stores this
+in a variable (e.g. `quay_rhel9_image` in `sales.demos`) and passes it to a
+`DataImportCron` source.
+
+### 10.4 Credential model
+
+| Credential | Source | Used by |
+|------------|--------|---------|
+| RH offline token | `~/.ansible.cfg` `[galaxy_server.rh_certified]` | Image Builder API compose |
+| Quay login | `podman login quay.io` (operator runs before playbook) | `podman push` |
+
+No AWS credentials are required for the containerDisk path.
+
+### 10.5 Compliance evidence
+
+The containerDisk is built from the same Image Builder compose with the same CIS
+L1 profile and package customizations as the AMI. Image Builder runs OpenSCAP at
+build time regardless of output format. The AMI pipeline independently validates
+compliance (98.07 / 95 gate).
+
+Per-format scanning (booting the qcow2 or extracting embedded results via
+`libguestfs`) is deferred as a future enhancement. Same profile applied to the
+same distribution produces the same compliance posture regardless of output
+format.
+
+### 10.6 Architecture: OS-only, same as AMIs
+
+The same principle from §9.3 applies — containerDisks are OS-only. Product
+installs happen via the consumer's setup playbooks after VM provisioning.

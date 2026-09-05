@@ -1,0 +1,210 @@
+---
+- name: Build CIS-compliant containerDisk via Red Hat Image Builder
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    image_builder_api: "https://console.redhat.com/api/image-builder/v1"
+    rh_sso_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+    rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible.cfg') }}"
+    cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
+    output_dir: "{{ playbook_dir }}/../output/rhel9-containerdisk"
+    quay_default: "quay.io/zigfreed/rhel9-cis-l1-golden"
+    quay_repo: "{{ lookup('ansible.builtin.env', 'QUAY_REPO') | default(quay_default, true) }}"
+    quay_registry: "{{ quay_repo.split('/')[0] }}"
+
+  tasks:
+    - name: Assert offline token is available
+      ansible.builtin.assert:
+        that:
+          - rh_offline_token | length > 0
+        fail_msg: "Red Hat offline token not found in ~/.ansible.cfg under [galaxy_server.rh_certified]"
+
+    - name: Assert podman is installed
+      ansible.builtin.command:
+        cmd: podman --version
+      changed_when: false
+
+    - name: Assert Quay login exists
+      ansible.builtin.command:
+        cmd: "podman login --get-login {{ quay_registry }}"
+      changed_when: false
+      register: quay_login_check
+      failed_when: quay_login_check.rc != 0
+
+    - name: Exchange offline token for access token
+      ansible.builtin.uri:
+        url: "{{ rh_sso_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: "refresh_token"
+          client_id: "cloud-services"
+          refresh_token: "{{ rh_offline_token }}"
+        status_code: 200
+      register: token_response
+      no_log: true
+
+    - name: Set access token fact
+      ansible.builtin.set_fact:
+        access_token: "{{ token_response.json.access_token }}"
+      no_log: true
+
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create image blueprint with CIS profile (guest-image)
+      ansible.builtin.uri:
+        url: "{{ image_builder_api }}/compose"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          distribution: "rhel-9"
+          image_requests:
+            - architecture: "x86_64"
+              image_type: "guest-image"
+              upload_request:
+                type: "aws.s3"
+                options: {}
+          customizations:
+            packages:
+              - aide
+              - firewalld
+              - systemd-journal-remote
+            openscap:
+              profile_id: "{{ cis_profile }}"
+        status_code: 201
+      register: compose_response
+      no_log: true
+
+    - name: Record compose ID
+      ansible.builtin.set_fact:
+        compose_id: "{{ compose_response.json.id }}"
+
+    - name: Show compose ID
+      ansible.builtin.debug:
+        msg: "Compose started — ID: {{ compose_id }}"
+
+    - name: Wait for compose to complete (with token refresh)
+      block:
+        - name: Run compose wait helper
+          ansible.builtin.command:
+            argv:
+              - python3
+              - "{{ playbook_dir }}/scripts/wait_for_compose.py"
+              - "{{ compose_id }}"
+          environment:
+            RH_OFFLINE_TOKEN: "{{ rh_offline_token }}"
+          register: compose_result
+          changed_when: false
+          no_log: true
+      rescue:
+        - name: Show compose wait failure details
+          ansible.builtin.fail:
+            msg: |
+              Compose {{ compose_id }} did not complete successfully.
+              rc={{ compose_result.rc | default('unknown') }}
+              stderr={{ compose_result.stderr | default('(no stderr captured)') }}
+
+    - name: Parse compose result
+      ansible.builtin.set_fact:
+        image_url: "{{ (compose_result.stdout | from_json).image_url }}"
+
+    - name: Compute build timestamp facts
+      ansible.builtin.set_fact:
+        build_date_iso: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        build_date_short: "{{ lookup('pipe', 'date -u +%Y%m%d-%H%M') }}"
+
+    - name: Build and push containerDisk
+      block:
+        - name: Download qcow2 image
+          ansible.builtin.get_url:
+            url: "{{ image_url }}"
+            dest: "{{ output_dir }}/disk.qcow2"
+            mode: "0644"
+            timeout: 600
+
+        - name: Write Containerfile
+          ansible.builtin.copy:
+            dest: "{{ output_dir }}/Containerfile"
+            mode: "0644"
+            content: |
+              FROM scratch
+              COPY disk.qcow2 /disk/disk.img
+
+        - name: Build containerDisk image
+          ansible.builtin.command:
+            argv:
+              - podman
+              - build
+              - --tag
+              - "{{ quay_repo }}:{{ build_date_short }}"
+              - --label
+              - "org.opencontainers.image.created={{ build_date_iso }}"
+              - --label
+              - "org.opencontainers.image.source=https://github.com/ericcames/image.builder.pipeline"
+              - --label
+              - "com.redhat.cis.level=L1"
+              - --label
+              - "com.redhat.cis.os=rhel9"
+              - --label
+              - "com.redhat.cis.compose-id={{ compose_id }}"
+              - --label
+              - "com.redhat.cis.pipeline=image-builder-pipeline"
+              - --file
+              - "{{ output_dir }}/Containerfile"
+              - "{{ output_dir }}"
+          changed_when: true
+
+        - name: Push containerDisk to Quay
+          ansible.builtin.command:
+            argv:
+              - podman
+              - push
+              - "{{ quay_repo }}:{{ build_date_short }}"
+          changed_when: true
+
+        - name: Save build output to file
+          ansible.builtin.copy:
+            content: "{{ build_output | to_nice_json }}"
+            dest: "{{ output_dir }}/build_output.json"
+            mode: "0644"
+          vars:
+            build_output:
+              compose_id: "{{ compose_id }}"
+              quay_image: "{{ quay_repo }}:{{ build_date_short }}"
+              quay_tag: "{{ build_date_short }}"
+              platform: "rhel9-containerdisk"
+              cis_profile: "{{ cis_profile }}"
+              build_date: "{{ build_date_iso }}"
+
+        - name: Show result
+          ansible.builtin.debug:
+            msg:
+              - "containerDisk pushed — {{ quay_repo }}:{{ build_date_short }}"
+              - "Compose ID: {{ compose_id }}"
+              - "Output saved to: {{ output_dir }}/build_output.json"
+
+      always:
+        - name: Remove downloaded qcow2
+          ansible.builtin.file:
+            path: "{{ output_dir }}/disk.qcow2"
+            state: absent
+
+        - name: Remove Containerfile
+          ansible.builtin.file:
+            path: "{{ output_dir }}/Containerfile"
+            state: absent
+
+        - name: Remove local podman image
+          ansible.builtin.command:
+            cmd: "podman rmi {{ quay_repo }}:{{ build_date_short }}"
+          changed_when: true
+          failed_when: false
