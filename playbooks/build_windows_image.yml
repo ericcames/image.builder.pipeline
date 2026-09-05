@@ -1126,8 +1126,11 @@
               progressing: read the console percentage twice, a few minutes
               apart, and if it goes DOWN the install is looping. Check that
               rootdisk has bootOrder 1 and installcd bootOrder 2 —
-              CD-first only works with prompting media (#50). Otherwise
-              watch the console:
+              CD-first only works with prompting media (#50). If the console
+              shows a desktop instead of Setup, the answer-file deletion
+              assert failed (#69) — read C:\Windows\Temp\panther-delete.log
+              via WinRM or offline (docs/design.md §10.2.2). Otherwise watch
+              the console:
               virtctl vnc {{ build_vm_name }} -n {{ build_namespace }}
 
     - name: Report what was built
