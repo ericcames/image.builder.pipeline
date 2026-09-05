@@ -429,6 +429,127 @@ Four things that are not obvious, all measured on 2026-09-05:
 Measured on the first real export: 4.6 GB gzip, 60 GiB apparent raw at 8.7 GiB
 on disk, **8.65 GiB qcow2**.
 
+### 10.2.2 The cached answer file — why a clone ignores the consumer's sysprep
+
+**Measured 2026-09-05 on `quay.io/zigfreed/win2k22-golden:20260905-2217`, the
+first image built with the #59 fix in the tree. The fix does not work. #59 is
+reopened.** Written down here because everything about the build looks correct
+while the delivered image is unusable by any consumer.
+
+Windows Setup caches the answer file it installed from into
+`%WINDIR%\Panther\unattend.xml`. Microsoft's implicit search order ranks that
+cache at **precedence 3**, ahead of removable read/write media at 4 and
+read-only removable media at **5** — and 5 is exactly where KubeVirt's sysprep
+API presents a consumer's CD. A clone therefore specializes from *this build's*
+file and stops on the OOBE region screen, whatever the consumer supplies.
+
+`autounattend.xml.j2` deletes the cache at `<Order>5</Order>`, before sysprep at
+6. **That delete is registered correctly and has no effect.** From the published
+image's own logs:
+
+```
+# C:\Windows\Panther\UnattendGC\setupact.log — registered verbatim
+15:12:30 [Shell Unattend] LogonCommands: Set command 'cmd /c "del /f /q
+         C:\Windows\Panther\unattend.xml ... 2>nul & exit /b 0"'
+
+# C:\Windows\System32\Sysprep\Panther\setupact.log — still there at generalize
+22:14:48 [sysprep.exe] UnattendSearchExplicitPath: Found unattend file at
+         [C:\Windows\Panther\unattend.xml]; examining for applicability.
+22:14:48 SYSPRP SysprepSearchForUnattend: No unattend file was specified or
+         located; skipping unattend generalize pass.
+```
+
+The clock skews `15:xx` → `22:xx` mid-build as the guest syncs time; it is a
+21-minute build, not a 7-hour one.
+
+**Sysprep did not re-create it.** "Generalize re-caches whatever is still there"
+is the natural hypothesis and the second line above rules it out — sysprep
+skipped the unattend pass entirely. The file was simply never removed.
+
+The other five `FirstLogonCommands` in the same block demonstrably ran: virtio
+drivers, guest agent, WinRM, the completion marker, and sysprep itself. So the
+block executed and this one command did nothing.
+
+**The delete ran, had sufficient rights, and did not remove the file.** Each
+half of that is measured, and together they leave the mechanism open:
+
+- **Order 5 executed.** Order 4's marker `C:\Windows\Temp\build-complete.txt`
+  is present in the image, and Order 6 generalized the machine, so the block ran
+  in sequence through the delete.
+- **Permissions are not the blocker.** On the running clone, the *same* command
+  succeeds — `del /f /q C:\Windows\Panther\unattend.xml`, then `dir` reports
+  `File Not Found`.
+- **Nothing re-created it.** The file's timestamp is `15:12`, matching the
+  original `Callback_Unattend_Serialize` that wrote it during Setup — not a
+  later rewrite. Had the delete succeeded and something restored the file, the
+  timestamp would move.
+
+So the `del` executed, was permitted, and left a file whose timestamp says it was
+never touched. **Why is not yet established, and `2>nul & exit /b 0` is the
+reason it cannot be answered from the build.** The redirect and unconditional
+`exit /b 0` were added so the command could not fail the build; they also discard
+the one piece of evidence — the command's own error — that would say what
+happened. A fix must make this observable before it can be made correct.
+
+*(An earlier revision of this section blamed an `Access is denied` on a
+SYSTEM-owned file. The clone test above disproves it. Recorded rather than
+quietly replaced, because "run it as SYSTEM" is the obvious next guess and it is
+now known not to be the answer.)*
+
+**Confirmed independently, offline and live:**
+
+- offline — pull the tag, `qemu-nbd --read-only --connect`, then
+  `ntfsls -l /dev/nbdXp3 -p /Windows/Panther`: `unattend.xml`, 11,129 bytes,
+  carrying `<ComputerName>WIN2K22GOLD</ComputerName>` and the post-fix
+  template's own `Delete the answer file Windows Setup cached` description
+- on a running clone at the OOBE screen — `Shift+F10`, then
+  `dir C:\Windows\Panther\unattend.xml`: same 11,129 bytes
+
+![A clone of the post-fix image stops on the OOBE region screen](images/win59-clone-stops-at-oobe.png)
+
+*A clone of `20260905-2217` stopping on the OOBE region screen — the failure #59
+was meant to remove. The consumer's answer file sets `InputLocale`,
+`SystemLocale`, `UILanguage` and `UserLocale`, which suppress exactly this page.*
+
+![The cached answer file is present on the clone, 11,129 bytes](images/win59-cached-unattend-present-on-clone.png)
+
+*The same 11,129-byte file the offline inspection found, seen from inside a
+running clone. Timestamp `03:12 PM` matches the Setup-time serialize.*
+
+![Deleting the file by hand succeeds, ruling out permissions](images/win59-del-succeeds-permissions-ruled-out.png)
+
+*`del /f /q` on that exact path succeeds and `dir` then reports `File Not Found`.
+This is what rules out an ACL or ownership explanation.*
+
+![Both tags in the quay repository with distinct manifests](images/win59-quay-both-tags.png)
+
+*Both tags present with distinct manifests — `20260905-2217` (post-fix) and
+`20260905-1826` (pre-fix). Evidence the rebuild produced a genuinely new image
+and the consumer imported it, so the failure is not a stale-image artefact.*
+
+**What a fix has to include, and the second item is the load-bearing one:**
+
+1. **Make the delete observable first.** Drop `2>nul & exit /b 0`, redirect the
+   command's output to a log under `C:\Windows\Temp`, and read it back off the
+   image. Until the failure can be seen, any replacement mechanism is a guess —
+   including `takeown`/`icacls` and a specialize-pass `RunSynchronousCommand`,
+   both of which assume a cause the clone test has already weakened.
+2. **An assertion that the file is gone at generalize time**, failing the build
+   if it is not. Nothing in the build verifies this today, which is why a broken
+   fix shipped, published, and reached a consumer before anyone noticed.
+3. Keeping it outside the `windows_sysprep_at_first_logon` guard, so the
+   hardening path inherits it rather than rediscovering #59.
+
+**A delivery consequence beyond the sysprep bug.** That cached file contains the
+build's local administrator password in clear text, so every published tag ships
+it. Microsoft gives this as the other reason the cleanup is mandatory before
+delivery. It applies to both tags currently in the repository.
+
+**The consumer was never at fault.** `sales.demos`' sysprep Secret, CD-ROM,
+`volumeStatus: sysprep -> sdb` and answer-file XML were verified correct on both
+the pre-fix and post-fix runs — including the `oobeSystem` locale settings that
+suppress the very screen the clone stops on.
+
 ### 10.3 Consumer discovery
 
 Unlike AMI tag-based filtering (§9.1), containerDisk discovery uses a single
