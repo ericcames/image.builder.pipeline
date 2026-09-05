@@ -45,7 +45,7 @@ If a change works for one consumer but breaks another, it doesn't ship.
 - Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
 - Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
 - Phase 2 (CIS L2, RHEL 8) — not started
-- Phase 3 (Windows containerDisk) — direction set: CIS-hardened Windows Server 2022 as containerDisk on Quay.io (#21). Producer work tracked in `sales.demos#193`, consumer in `sales.demos#3`.
+- Phase 3 (Windows containerDisk) — direction set: CIS-hardened Windows Server 2022 as containerDisk on Quay.io (#21). Producer work is #24, **in this repo** (transferred from `sales.demos#193`); consumer is `sales.demos#3`, already shipped.
 
 See `ROADMAP.md` for the full plan.
 

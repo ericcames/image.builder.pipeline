@@ -65,10 +65,12 @@ Satellite host OS stays L1. L2 is workload-node-only until L2-on-Satellite is pr
 
 **Target:** CIS L1 Windows Server 2022 as a containerDisk on a private Quay.io
 repo. No AWS AMI — Windows images are consumed by OpenShift Virtualization via
-`DataImportCron`. Producer work tracked in
-[sales.demos#193](https://github.com/ericcames/sales.demos/issues/193); consumer
-in [sales.demos#3](https://github.com/ericcames/sales.demos/issues/3). Permanent
-home is this repo — the factory repo owns hardening + compliance evidence.
+`DataImportCron`. Producer work is [#24](https://github.com/ericcames/image.builder.pipeline/issues/24),
+**in this repo** — transferred here from `sales.demos#193` so the tracker matches
+the decision below. Consumer is
+[sales.demos#3](https://github.com/ericcames/sales.demos/issues/3), already
+shipped. Permanent home is this repo — the factory repo owns hardening +
+compliance evidence.
 
 **Key decisions:**
 
