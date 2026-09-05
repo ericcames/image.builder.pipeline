@@ -202,6 +202,14 @@ curl -L --fail -o /tmp/win.iso "<the new windows_iso_url>"
 
 ## Preflight Check
 
+**Start the session in `sales.demos`, not here.** That is the only directory
+where `.mcp.json` loads, giving `openshift-sandbox` (read-write) and
+`openshift-demo` (read-only) for inspecting the cluster while a build runs. A
+session started there can still `cd` here and run this playbook. **It does not
+change anything below** — the three variables are still read from the
+environment, and MCP does not supply them.
+
+
 ```bash
 # 1. The cluster can reach Microsoft's fwlink (it, not you, fetches the media)
 curl -sSI -o /dev/null -w '%{http_code}\n' -L "https://go.microsoft.com/fwlink/p/?LinkID=2195280"

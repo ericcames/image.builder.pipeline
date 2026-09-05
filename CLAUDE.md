@@ -90,6 +90,7 @@ See `ROADMAP.md` for the full plan.
 
 ## Workflow
 
+- **Start Claude in `sales.demos` for anything touching the cluster.** This repo has **no MCP servers** — no `.mcp.json`, nothing in settings. `sales.demos/.mcp.json` defines `openshift-sandbox` (`kubernetes-mcp-server`, toolsets `core,config,kubevirt`, read-write) and `openshift-demo` (same, read-only). Both are project-scoped, so they load **only** when Claude Code starts in that directory. A session started there can still `cd` here and run these playbooks, so starting there is strictly better than the reverse — there is no cost the other way. **MCP does not remove the credential requirement**: `build_windows_image.yml` and `publish_windows_containerdisk.yml` read `K8S_AUTH_HOST` and `K8S_AUTH_API_KEY` from the environment (`playbooks/build_windows_image.yml:73-74`, asserted at `:239-242`), and `docs/design.md` §4.1 says where those come from. MCP helps with cluster inspection and the consumer half, not with those.
 - **`main` is protected** — PRs always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass via `.github/workflows/lint.yml`.
 - **Scheduled builds** — `.github/workflows/containerdisk-rebuild.yml` rebuilds the RHEL 9 containerDisk monthly (1st of month, 06:00 UTC). Manual trigger via `workflow_dispatch`. See `docs/operations.md` for the runbook.
 - **Branch naming:** `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`)
