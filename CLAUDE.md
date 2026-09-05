@@ -45,7 +45,7 @@ If a change works for one consumer but breaks another, it doesn't ship.
 
 - Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
 - Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
-- Phase 1.7 (RHEL 9 containerDisk) — playbook and tooling complete; end-to-end smoke test pending. See `docs/design.md` §10 for the containerDisk contract.
+- Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. See `docs/design.md` §10 for the containerDisk contract.
 - Phase 2 (CIS L2, RHEL 8) — not started
 - Phase 3 (Windows containerDisk) — direction set: CIS-hardened Windows Server 2022 as containerDisk on Quay.io (#21). Producer work is #24, **in this repo** (transferred from `sales.demos#193`); consumer is `sales.demos#3`, already shipped.
 
@@ -67,6 +67,8 @@ See `ROADMAP.md` for the full plan.
 | `.claude/skills/dev-workflow/` | Mandatory development cycle — issue, branch, PR, merge |
 | `.claude/skills/collections-sync/` | Pin, install, verify Ansible collections in `collections/requirements.yml` |
 | `.claude/skills/first-time/` | Prerequisite validation — Hub token, collections, AWS credential pattern |
+| `.claude/skills/rhel9-containerdisk/` | Build and publish the RHEL 9 CIS L1 containerDisk (Phase 1.7) |
+| `.claude/skills/windows-image-build/` | Build the Windows Server 2022 containerDisk (Phase 3) |
 
 ## Where things live
 

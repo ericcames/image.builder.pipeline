@@ -65,7 +65,7 @@ image and pushed to `quay.io/zigfreed/rhel9-cis-l1-golden:<date>`. See
 | containerDisk build + Quay push workflow | Complete |
 | OCI label contract (parallel to AMI tags) | Complete |
 | `docs/design.md` §10 — containerDisk contract | Complete |
-| End-to-end smoke test: compose → download → build → push → consumer pull | Pending |
+| End-to-end smoke test: compose → download → build → push → consumer pull | Complete (2026-09-05, tag `20260905-0411`) |
 
 ---
 
