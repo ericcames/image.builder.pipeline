@@ -205,6 +205,17 @@
     # supply with -e, or export WINDOWS_ADMIN_PASSWORD.
     windows_admin_password: "{{ lookup('ansible.builtin.env', 'WINDOWS_ADMIN_PASSWORD') }}"
 
+    # AN HOUR IS THE WRONG DEFAULT FOR A THROWAWAY (#54). KubeVirt's Windows
+    # preference asks for terminationGracePeriodSeconds 3600, which is right for
+    # a machine someone cares about and wrong for this one: a guest wedged mid
+    # Setup never shuts down cleanly, so every teardown waits out the full hour
+    # with the namespace stuck Terminating behind it. Measured — a launcher pod
+    # deleted at 16:41 carried deletionTimestamp 17:41.
+    #
+    # This VM exists to be rebuilt and holds nothing anyone would grieve. Sixty
+    # seconds still lets a healthy guest flush and halt.
+    build_termination_grace_seconds: 60
+
     build_wait_retries: 120
     build_wait_delay: 30
 
@@ -362,6 +373,34 @@
           'virtio-win' in {{ cnv_namespace }} carrying a 'virtio-win-image'
           key, which HCO creates. Pass -e virtio_win_image=<ref> to override.
         quiet: true
+
+    - name: Look for a build namespace that is still going away
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ build_namespace }}"
+      register: build_ns
+
+    - name: Refuse to build into a namespace that is still terminating
+      # THIS FAILS QUIETLY WITHOUT THE GUARD, and that is the whole point (#54).
+      # Kubernetes refuses to CREATE objects in a terminating namespace — but
+      # every object this playbook needs already exists there from the previous
+      # build, so `state: present` is a no-op patch and nothing errors. The run
+      # then waits for the PREVIOUS VM to power off, having reported that it
+      # created a new one. It looks completely normal.
+      ansible.builtin.assert:
+        that:
+          - (build_ns.resources | default([]) | first | default({})).status.phase | default('') != 'Terminating'
+        fail_msg: >-
+          Namespace {{ build_namespace }} is still Terminating, so this build
+          would silently reuse the previous VM. Teardown returns before the
+          namespace is gone, by design. Wait for it, or if a wedged guest is
+          holding it — a launcher pod can sit out a full grace period — clear it
+          with: virtctl stop {{ build_vm_name }} -n {{ build_namespace }}
+          --force --grace-period=0. Do NOT force-delete the virt-launcher pod;
+          that wedges virt-handler and it then refuses to start any new domain
+          with nothing surfaced anywhere.
+      when: windows_build_state == 'present'
 
     - name: Create the build namespace
       kubernetes.core.k8s:
@@ -943,6 +982,7 @@
                 labels:
                   kubevirt.io/domain: "{{ build_vm_name }}"
               spec:
+                terminationGracePeriodSeconds: "{{ build_termination_grace_seconds }}"
                 domain:
                   devices:
                     disks:

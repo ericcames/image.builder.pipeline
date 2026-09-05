@@ -246,6 +246,23 @@ ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
   -e windows_build_state=absent
 ```
 
+**Teardown returns before the namespace is gone**, deliberately — a namespace with
+PVCs takes minutes and nothing needs to watch it. **Do not start the next build
+until it has actually gone.** The playbook now refuses to build into a
+`Terminating` namespace, because the failure without that guard is silent: every
+object already exists, so `state: present` is a no-op patch and the run waits on
+the *previous* VM while reporting that it made a new one (#54).
+
+If a wedged guest is holding the teardown — a launcher pod can sit out its whole
+grace period — clear it with KubeVirt's own path:
+
+```bash
+virtctl stop win2k22-build -n image-factory-windows --force --grace-period=0
+```
+
+**Never `oc delete pod --force` a virt-launcher.** That wedges virt-handler, which
+then refuses to start any new domain with nothing surfaced anywhere.
+
 ## Verify against the cluster, not the recap
 
 ```bash
@@ -280,6 +297,8 @@ virtctl vnc win2k22-build -n image-factory-windows
 | VM never leaves `Provisioning` | The blank DataVolume or the ISO DataVolume is still importing — and on the default path the ISO DataVolume waits on the re-master pod before it can start | `oc get dv -n image-factory-windows`, then `oc get pod win2k22-build-remaster -n image-factory-windows`. 4.7 GB in and 4.7 GB out |
 | `virtctl image-upload` fails | `cdi-uploadproxy` Route unreachable | `oc get route cdi-uploadproxy -n openshift-cnv` |
 | Build refuses to start, naming the demo cluster | `K8S_AUTH_HOST` points at demo | Intentional. Builds run on sandbox. |
+| Build refuses to start, naming a `Terminating` namespace | The previous teardown has not finished (#54) | Wait, or `virtctl stop ... --force --grace-period=0` if a wedged guest is holding it |
+| Teardown seems to hang for an hour | A wedged guest sitting out its termination grace period | Same `virtctl stop --force`. New builds use a 60s grace period so this stops recurring |
 | Console sits at "Press any key to boot from CD or DVD" | The import holds stock media, not re-mastered | Check the `iso-variant` annotation above; re-run with `windows_iso_remaster=true` |
 | **Setup runs for hours, progress bar moving, never finishes** | **Setup is restarting, not progressing** — the CD is booting ahead of the disk (#50) | **Read the percentage twice, minutes apart. If it goes DOWN it is looping.** Check `rootdisk` is `bootOrder: 1` |
 | Build times out with "never reached Stopped" | Usually the loop above | The failure message says what to check. `virtctl vnc win2k22-build -n image-factory-windows` |
