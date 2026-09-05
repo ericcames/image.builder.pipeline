@@ -80,15 +80,26 @@ so a build that needs a human is indistinguishable from a build that is merely
 slow. It cost a wasted 25-minute run before anyone noticed.
 
 Microsoft ships `efisys_noprompt.bin` beside `efisys.bin` for exactly this. A pod
-on the cluster fetches the ISO, verifies the checksum, swaps
-`efisys_noprompt.bin` and `cdboot_noprompt.efi` over their prompting twins,
-rebuilds the ISO with `xorriso` and serves it over HTTP; CDI imports from that
-Service instead of from Microsoft. **Only the URL differs** — the import path,
-the DataVolume, the VM and `autounattend.xml` are the ones already verified.
+on the cluster fetches the ISO, verifies the checksum, and **overwrites the El
+Torito boot image with the no-prompt twin**, then serves the result over HTTP;
+CDI imports from that Service instead of from Microsoft. **Only the URL
+differs** — the import path, the DataVolume, the VM and `autounattend.xml` are
+the ones already verified.
 
-This is Red Hat's own recipe, from the `modify-windows-iso-file` task in
-`kubevirt-tekton-tasks`, rather than an invention. Both files matter: `efisys.bin`
-*is* the El Torito boot image and `cdboot.efi` is what lives inside it.
+**It is a byte-exact patch, not a rebuild** ([#44](https://github.com/ericcames/image.builder.pipeline/issues/44)).
+The two boot images are the same size on this medium (1,474,560), and the hidden
+El Torito image is a byte-identical copy of `efisys.bin` — so 720 sectors are
+overwritten at one LBA and **the UDF filesystem is left exactly as Microsoft
+shipped it**. Nothing is written until the bytes at the computed address are
+proved to be the prompting image, so a misread catalogue fails rather than
+corrupts.
+
+**The medium is UDF, and that is why it needs `guestfish`.** `sources/install.wim`
+is 4,340,202,461 bytes — past ISO 9660's 4 GiB single-extent limit — so the ISO
+9660 tree is a stub holding one 135-byte file. `xorriso` reads with libisofs,
+which has no UDF support; the first attempt at this used it and extracted one
+node. libguestfs boots a kernel that *does* have a UDF driver, which is why Red
+Hat's `modify-windows-iso-file` uses it and asks for `devices.kubevirt.io/kvm`.
 
 - It is on by default. `-e windows_iso_remaster=false` returns you to the stock
   ISO and a keypress.
@@ -99,8 +110,12 @@ This is Red Hat's own recipe, from the `modify-windows-iso-file` task in
   `image-factory/iso-variant: noprompt|stock`. **A `Succeeded` import of the
   wrong variant is re-imported** — phase alone cannot tell a re-mastered disk
   from a prompting one, and both report success.
-- The pod, its Service, its ConfigMap and its 20 GiB scratch PVC are deleted as
-  soon as the import succeeds.
+- The pod runs an initContainer (`remaster`, guestfish + the KVM device) and
+  then a `serve` container (python3). The KVM device is an extended resource
+  from KubeVirt's device plugin, **not** a privileged securityContext — the pod
+  still runs under `restricted-v2` as an arbitrary non-root UID.
+- The pod, its Service, its ConfigMap and its scratch PVC are deleted as soon as
+  the import succeeds.
 
 ### The 180-day clock is the thing people forget
 
@@ -231,8 +246,9 @@ virtctl vnc win2k22-build -n image-factory-windows
 | `virtctl image-upload` fails | `cdi-uploadproxy` Route unreachable | `oc get route cdi-uploadproxy -n openshift-cnv` |
 | Build refuses to start, naming the demo cluster | `K8S_AUTH_HOST` points at demo | Intentional. Builds run on sandbox. |
 | Console sits at "Press any key to boot from CD or DVD" | The import holds stock media, not re-mastered | Check the `iso-variant` annotation above; re-run with `windows_iso_remaster=true` |
-| Playbook stops on the re-master with a pod log attached | The re-master failed — bad checksum, no `efisys_noprompt.bin`, or a short extraction | The log names which. The pod is left in place; `oc logs win2k22-build-remaster -n image-factory-windows` |
-| Re-master pod never becomes Ready | It is still fetching or rebuilding — 4.7 GB in, 4.7 GB out | `oc logs -f win2k22-build-remaster -n image-factory-windows` |
+| Playbook stops on the re-master with a pod log attached | The re-master failed — bad checksum, no `efisys_noprompt.bin`, boot images of unequal size, or the bytes at the El Torito address were not the prompting image | The log names which. The pod is left in place; `oc logs win2k22-build-remaster -c remaster -n image-factory-windows` |
+| Re-master pod never becomes Ready | Still fetching, or libguestfs is booting its appliance | `oc logs -f win2k22-build-remaster -c remaster -n image-factory-windows` |
+| Re-master fails with "the bytes at LBA … are not efi/microsoft/boot/efisys.bin" | A different medium, laid out differently | Deliberate refusal, not a bug. Nothing was written. Re-check `windows_iso_url` and `windows_iso_sha256` |
 
 ## Where this sits
 
