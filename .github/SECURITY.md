@@ -23,7 +23,7 @@ When reporting, include:
 As a reminder — these are never committed to this repo:
 
 - Credentials, tokens, or passwords of any kind
-- Red Hat offline tokens (belong in `~/.ansible/ansible.cfg` only)
+- Red Hat offline tokens (belong in `~/.ansible.cfg` only)
 - AWS credentials (belong in environment variables only)
 - Inventory files other than `inventories/sample/` (all others are gitignored)
 - `docs/aws-environment.md` (gitignored — local environment notes)

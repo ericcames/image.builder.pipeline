@@ -26,7 +26,7 @@ labels: bug
 | CIS level | L1 / L2 |
 | Playbook | `build_cis_image.yml` / `deploy_and_scan.yml` / `generate_policy_data.yml` |
 | Compose ID | (if known) |
-| Consumer affected | `rego_policy_libraries` / DC1 (`demo.datacenter`) / both |
+| Consumer affected | `rego_policy_libraries` / `sales.demos` / both |
 
 ## Relevant output
 

@@ -46,7 +46,7 @@ latest RHEL 9 compliance snapshot.
 ## Prerequisites
 
 - Red Hat account with Image Builder access (console.redhat.com)
-- Red Hat offline token in `~/.ansible/ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
+- Red Hat offline token in `~/.ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
   (same token used for Automation Hub — obtain from console.redhat.com → Automation Hub → Connect to Hub → API token)
 - AWS credentials with EC2 permissions
 - Ansible collections (installed via requirements.yml)
@@ -79,7 +79,7 @@ should be copied into the appropriate `golden_images/` path in `rego_policy_libr
 ## Related Projects
 
 - [rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries) — OPA policy library this pipeline feeds
-- [aap.as.code](https://github.com/ericcames/aap.as.code) — AAP bootstrap and demo platform
+- [sales.demos](https://github.com/ericcames/sales.demos) — Demo platform; AMI and containerDisk consumer
 
 ## License
 
