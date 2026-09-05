@@ -9,21 +9,21 @@ Open issue → branch from main → implement → open PR (Closes #N) → merge 
 ```
 
 1. **Open an issue first** — before writing a single line of code or making any change, open a GitHub issue describing what you're fixing or adding and why. No implementation without an issue.
-2. **Branch from `main`** — use the naming pattern `<type>/<short-description>` (e.g. `fix/token-cleanup`, `feat/phase2-l2-blueprint`, `docs/exempt-controls`).
+2. **Branch from `main`** — use the naming pattern `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`, `docs-15-exempt-controls`).
 3. **One concern per PR** — group changes by shared root cause, not item count. The test: would you revert these together? If yes, ship them together. Behavior changes stay isolated regardless.
 4. **Reference the issue** — include `Closes #<number>` in your PR description so the issue closes automatically on merge.
-5. **PRs target `main`** — direct pushes to `main` are not blocked, but all non-trivial changes should go through a PR for traceability.
+5. **PRs target `main`** — `main` is protected; a PR is always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass before merge.
 6. **Update CHANGELOG.md** — every PR must include a CHANGELOG entry grouped under Added / Changed / Fixed.
 
 ## Branch naming
 
-| Prefix | When to use |
-|--------|-------------|
-| `feat/` | New capability or platform |
-| `fix/` | Bug fix |
-| `docs/` | Documentation only |
-| `chore/` | Dependency updates, CI, housekeeping |
-| `refactor/` | Code restructure with no behavior change |
+| Prefix | When to use | Example |
+|--------|-------------|---------|
+| `feat` | New capability or platform | `feat-21-windows-containerdisk` |
+| `fix` | Bug fix | `fix-22-token-path` |
+| `docs` | Documentation only | `docs-15-exempt-controls` |
+| `chore` | Dependency updates, CI, housekeeping | `chore-23-bump-amazon-aws` |
+| `refactor` | Code restructure with no behavior change | `refactor-10-parser-cleanup` |
 
 ## Commit messages
 
@@ -58,4 +58,4 @@ Never commit:
 - Inventory files other than `inventories/sample/` (all others are gitignored)
 - `docs/aws-environment.md` (gitignored — local notes only)
 
-Red Hat offline tokens come from `~/.ansible/ansible.cfg`. AWS credentials come from environment variables. Neither belongs in this repo.
+Red Hat offline tokens come from `~/.ansible.cfg`. AWS credentials come from environment variables. Neither belongs in this repo.

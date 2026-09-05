@@ -211,18 +211,19 @@ Key decisions made during planning (2026-04-22):
 
 ---
 
-## 9. Integration with demo.datacenter (DC1)
+## 9. Downstream consumers
 
 A second consumer of this pipeline's output, distinct from `rego_policy_libraries`.
-DC1 consumes the **AMIs themselves** — not `data.json` — as the boot image for its
-Layer 1 Satellite host and Layer 3 RHEL workload nodes.
+[`sales.demos`](https://github.com/ericcames/sales.demos) consumes the **AMIs
+themselves** — not `data.json` — as the boot image for its Layer 1 Satellite host
+and Layer 3 RHEL workload nodes.
 
-**Status:** Pipeline applies the tagging contract below as of Phase 1.5. DC1's
-`variables.tf` swap to consume these tags is the remaining Phase 1.5 work.
+**Status:** Pipeline applies the tagging contract below as of Phase 1.5. The
+`sales.demos` tag-filter swap is the remaining Phase 1.5 work.
 
 ### 9.1 Discovery mechanism — tag-based
 
-DC1's Terraform discovers AMIs via `data "aws_ami"` with tag filters. Tag-based
+Consumer Terraform discovers AMIs via `data "aws_ami"` with tag filters. Tag-based
 discovery is more flexible than name-pattern matching: consumers can filter on
 any combination of provenance / OS / level without coupling to a specific name
 format.
@@ -261,7 +262,7 @@ reflected in the `BuildDate` tag for explicit age checks.
 ### 9.2 AMI tagging contract
 
 The pipeline applies six tags to every AMI it produces. These are the versioned
-cross-repo contract with DC1 and any other consumer:
+cross-repo contract with downstream consumers:
 
 | Tag | Value | Why |
 |---|---|---|
@@ -278,14 +279,14 @@ operator convenience. Discovery uses `Pipeline` + `OS` + `CIS-Level`.
 ### 9.3 Architecture: OS-only, not product-baked
 
 Pipeline produces **OS-only** hardened AMIs. Product installs (Satellite, app
-stacks) happen **on top** via DC1's existing setup playbooks
+stacks) happen **on top** via the consumer's existing setup playbooks
 (e.g., `satellite_setup.yml`). Rationale:
 
 - Satellite has post-install state (orgs, manifests, certs, content views) that doesn't AMI-ify cleanly
 - Keeps the pipeline product-agnostic — one `rhel9-cis-l1` AMI serves Satellite host, workload nodes, and any future product
-- DC1's existing setup playbooks need only the AMI filter swap to consume hardened AMIs
+- Consumer setup playbooks need only the AMI filter swap to consume hardened AMIs
 
-### 9.4 CIS Level selection per DC1 layer
+### 9.4 CIS Level selection per layer
 
 - **Satellite host (Layer 1):** CIS L1 only. L2 firewall/service tightening fights Satellite's installer (requires ports 80, 443, 5647, 8000, 8140, 9090 open and several services running).
 - **RHEL workload nodes (Layer 3):** L1 baseline; L2 available per workload group as L2 builds mature.

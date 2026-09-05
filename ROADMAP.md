@@ -5,8 +5,8 @@
 Automate the full lifecycle of building, scanning, and validating CIS-compliant
 machine images — producing structured policy data for OPA enforcement in
 [rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries),
-and serving as the source of hardened AMIs for
-[demo.datacenter](https://github.com/ericcames/demo.datacenter) (DC1).
+and serving as the source of hardened images for
+[sales.demos](https://github.com/ericcames/sales.demos).
 
 ---
 
@@ -31,18 +31,18 @@ Validated 2026-05-12. Current state in [docs/cis-l1-rhel9-status.md](docs/cis-l1
 
 ---
 
-## Phase 1.5 — demo.datacenter (DC1) integration
+## Phase 1.5 — Downstream consumer integration
 
-**Target:** DC1's Terraform consumes pipeline-built AMIs instead of stock Red Hat
+**Target:** `sales.demos` consumes pipeline-built AMIs instead of stock Red Hat
 marketplace AMIs. See `docs/design.md` §9 for the contract.
 
 | Task | Status |
 |------|--------|
-| Implement AMI tagging contract in `build_cis_image.yml` per design.md §9.2 | Complete (this PR — 6 tags: `Pipeline`, `OS`, `CIS-Level`, `BuildDate`, `ComposeID`, `Name`) |
-| Update DC1 `data.tf.j2` — owner from Red Hat marketplace (`309956199498`) to Image Builder service account (`463606842039`); switch to tag-based `aws_ami` filter (Pipeline + OS + CIS-Level) | Pending merge of [demo.datacenter PR #14](https://github.com/ericcames/demo.datacenter/pull/14) |
-| Smoke test: `satellite_setup.yml` installs cleanly on tagged pipeline AMI | Pending |
+| Implement AMI tagging contract in `build_cis_image.yml` per design.md §9.2 | Complete (6 tags: `Pipeline`, `OS`, `CIS-Level`, `BuildDate`, `ComposeID`, `Name`) |
+| `sales.demos` tag-based `aws_ami` filter (Pipeline + OS + CIS-Level) with `owners = ["463606842039"]` | Pending |
+| Smoke test: Satellite installs cleanly on tagged pipeline AMI | Pending |
 | Document any CIS-L1-vs-Satellite exempt controls discovered | Pending |
-| Roll AMI consumption to all RHEL 9 DC1 nodes | Pending |
+| Roll AMI consumption to all RHEL 9 nodes | Pending |
 
 ---
 
@@ -61,21 +61,35 @@ Satellite host OS stays L1. L2 is workload-node-only until L2-on-Satellite is pr
 
 ---
 
-## Phase 3 — Windows Server 2022
+## Phase 3 — Windows Server 2022 containerDisk ([#21](https://github.com/ericcames/image.builder.pipeline/issues/21))
 
-**Target:** CIS Level 1, Windows Server 2022.
+**Target:** CIS L1 Windows Server 2022 as a containerDisk on a private Quay.io
+repo. No AWS AMI — Windows images are consumed by OpenShift Virtualization via
+`DataImportCron`. Producer work tracked in
+[sales.demos#193](https://github.com/ericcames/sales.demos/issues/193); consumer
+in [sales.demos#3](https://github.com/ericcames/sales.demos/issues/3). Permanent
+home is this repo — the factory repo owns hardening + compliance evidence.
 
-Windows image manifest format differs from Linux. Requires:
-- Separate input schema extension in `rego_policy_libraries`
-- Windows-specific SCAP/OVAL tooling (not OpenSCAP)
-- Possible use of EC2 Image Builder (AWS) rather than Red Hat Image Builder
+**Key decisions:**
+
+| Decision | Choice | Why |
+|---|---|---|
+| Hardening | [ansible-lockdown/Windows-2022-CIS](https://github.com/ansible-lockdown/Windows-2022-CIS) | Ansible-native, per-control tags |
+| Evidence | Role audit tags | OpenSCAP does not cover Windows; CIS-CAT Pro requires paid SecureSuite membership |
+| Install | Unattended from answer file | No manual clicks in an image factory |
+| Media | 180-day eval ISO | No volume-licensed media available — **time bomb, must be documented in tag and run-sheet** |
+| Distribution | Private Quay repo, containerdisk, date-tagged, never overwritten | Windows cannot be redistributed publicly |
+| Consumer contract | One string — a containerdisk tag | Decouples producer from consumer lifecycle |
 
 | Task | Status |
 |------|--------|
-| Windows image pipeline design | Pending |
-| CIS/STIG benchmark selection | Pending |
-| SCAP/OVAL result parser for Windows | Pending |
+| Unattended install + virtio drivers + QEMU guest agent | Pending |
+| ansible-lockdown/Windows-2022-CIS hardening with patch tags | Pending |
+| WinRM over HTTPS on 5986 (consumer contract) | Pending |
+| Audit-tag evidence capture | Pending |
+| sysprep, wrap as containerDisk, `podman push` to Quay | Pending |
 | `data.json` generator for `golden_images/os/windows/server_2022/` | Pending |
+| `docs/design.md` §10 — containerDisk contract (parallel to §9 for AMIs) | Pending |
 
 ---
 

@@ -16,7 +16,7 @@ labels: enhancement
 
 <!-- Which consumer(s) does this affect? -->
 - [ ] `rego_policy_libraries` (OPA policy data)
-- [ ] DC1 / `demo.datacenter` (AMI consumption)
+- [ ] `sales.demos` (AMI / containerDisk consumption)
 - [ ] Both
 - [ ] Neither / internal pipeline only
 

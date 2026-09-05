@@ -7,7 +7,7 @@
   vars:
     image_builder_api: "https://console.redhat.com/api/image-builder/v1"
     rh_sso_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
-    rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible/ansible.cfg') }}"
+    rh_offline_token: "{{ lookup('ini', 'token section=galaxy_server.rh_certified file=~/.ansible.cfg') }}"
     aws_region: "{{ lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION') | default('us-east-1', true) }}"
     target_platform: "{{ lookup('ansible.builtin.env', 'TARGET_PLATFORM') | default('rhel9', true) }}"
     cis_profile: "xccdf_org.ssgproject.content_profile_cis_server_l1"
@@ -28,7 +28,7 @@
       ansible.builtin.assert:
         that:
           - rh_offline_token | length > 0
-        fail_msg: "Red Hat offline token not found in ~/.ansible/ansible.cfg under [galaxy_server.rh_certified]"
+        fail_msg: "Red Hat offline token not found in ~/.ansible.cfg under [galaxy_server.rh_certified]"
 
     - name: Assert target platform is supported
       ansible.builtin.assert:

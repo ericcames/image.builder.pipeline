@@ -7,7 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- `build_cis_image.yml` token lookup path — was reading from frozen `~/.ansible/ansible.cfg` (stale Oct 2025 token) instead of active `~/.ansible.cfg`. Latent bug that would 401 on next token rotation. Closes #22
+- Stale "Same AWS account as DC1" claim in CLAUDE.md — Image Builder builds in service account `463606842039` and shares with the consumer account; CLAUDE.md now matches the corrected design.md §9.1
 - `docs/design.md` §9.1 and `ROADMAP.md` AMI ownership contract — Red Hat Image Builder is a **hosted service** that builds AMIs in its own service account (`463606842039`) and shares them with the consumer account via the API's `share_with_accounts` field. The consumer never owns the AMI, only receives launch permission. Previous text claimed "pipeline and DC1 share one AWS account; no cross-account sharing" and prescribed `owners = ["self"]` for the DC1 data source — both wrong. Surfaced when [demo.datacenter PR #14](https://github.com/ericcames/demo.datacenter/pull/14) ran end-to-end and `terraform plan` returned "no results" against the shared AMI.
+
+### Changed
+- All cross-repo references updated: `aap.as.code` and `demo.datacenter` → [`sales.demos`](https://github.com/ericcames/sales.demos) throughout CLAUDE.md, ROADMAP.md, README.md, CONTRIBUTING.md, and `docs/design.md` §9
+- `docs/design.md` §9 header renamed from "Integration with demo.datacenter (DC1)" to "Downstream consumers" — the mechanism is consumer-agnostic
+- Phase 3 roadmap rewritten: Windows Server 2022 will ship as a CIS-hardened containerDisk on Quay.io, not an AWS AMI. Tracked in #21
+- CLAUDE.md consumer table expanded to three rows (rego_policy_libraries, sales.demos AMIs, sales.demos containerDisks)
+- Branch naming convention aligned with `sales.demos`: `<type>-<issue>-<slug>` replaces `<type>/<description>`
+- CONTRIBUTING.md updated: `main` is now protected, PRs always required
+
+### Added
+- `.claude/skills/dev-workflow/SKILL.md` — mandatory development cycle for Claude agents working in this repo
+- CLAUDE.md workflow section — documents protected `main`, branch naming, multi-session safety, standing merge authorization
+- `main` branch protection: required CI checks (`yamllint`, `ansible-lint`), PRs required, enforce admins, no force pushes
 
 ### Added
 - GitHub community health files: `CONTRIBUTING.md`, `.github/SECURITY.md`, `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/pull_request_template.md` — tailored to pipeline context, ROADMAP phases, and the two-consumer contract

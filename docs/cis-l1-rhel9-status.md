@@ -59,7 +59,7 @@ The full `data.json` is at `output/rhel9/data.json` (gitignored).
 | Consumer | What it reads | Integration point |
 |---|---|---|
 | [`rego_policy_libraries`](https://github.com/ynotbhatc/rego_policy_libraries) | `data.json` | `golden_images/os/linux/rhel_9/data.json` |
-| [`demo.datacenter`](https://github.com/ericcames/demo.datacenter) | The AMI itself, via name filter | `roles/infrastructure/files/variables.tf` (pending Phase 1.5) |
+| [`sales.demos`](https://github.com/ericcames/sales.demos) | The AMI itself, via tag filter | Terraform `data.aws_ami` tag filter (pending Phase 1.5) |
 
 See [design.md §6](design.md) and [§9](design.md) for the full consumer contracts.
 

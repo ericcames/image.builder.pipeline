@@ -11,7 +11,7 @@
 
 <!-- Does this affect either downstream consumer? -->
 - [ ] `rego_policy_libraries` — `data.json` output changed
-- [ ] DC1 / `demo.datacenter` — AMI tags or naming changed
+- [ ] `sales.demos` — AMI tags, containerDisk contract, or naming changed
 - [ ] No consumer impact
 
 ## Checklist
