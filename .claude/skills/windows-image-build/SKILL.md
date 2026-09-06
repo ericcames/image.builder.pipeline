@@ -20,7 +20,7 @@ quay repo.
 |---|---|
 | PR 1 — unattended build on the cluster | **Merged** (#29) |
 | No keypress — re-master the ISO onto `efisys_noprompt.bin` | **Merged** ([#40](https://github.com/ericcames/image.builder.pipeline/issues/40)) |
-| PR 2 — `ansible-lockdown/Windows-2022-CIS` hardening + audit evidence | Not started |
+| PR 2 — CIS L1 Member Server hardening + sysprep over WinRM | **Done** |
 | PR 3 — export, containerdisk wrap, `podman push`, `design.md` §10 | **Merged** |
 
 Tracked in [#24](https://github.com/ericcames/image.builder.pipeline/issues/24).
@@ -257,21 +257,38 @@ export K8S_AUTH_API_KEY="<token>"
 export WINDOWS_ADMIN_PASSWORD="<password baked into the image>"
 
 ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
-  -e windows_eval_expires=$(date -u -d '+180 days' +%Y-%m-%d)
+  -e windows_eval_expires=$(date -u -d '+180 days' +%Y-%m-%d) \
+  -e demo_cluster_hostname=cluster-xxxxx
 ```
+
+The default build now applies CIS L1 hardening over WinRM before sysprep. To
+build without CIS (the old PR 1 behavior):
+
+```bash
+ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
+  -e windows_cis_harden=false -e windows_sysprep_at_first_logon=true \
+  -e windows_eval_expires=$(date -u -d '+180 days' +%Y-%m-%d) \
+  -e demo_cluster_hostname=cluster-xxxxx
+```
+
+**The CIS role needs `kubectl` on your PATH** — it creates a port-forward from
+your machine to the build VM's WinRM. The port-forward is a background process
+cleaned up at the end; if the playbook dies, `kill $(cat /tmp/ibp-pf.pid)`.
 
 **Nothing to watch**, which is what #40 bought. **Measured end to end on
 2026-09-05**, on `cluster-kbjvc`, from a clean namespace to a `Stopped`,
-generalized VM:
+generalized VM (without CIS):
 
 | Phase | Duration |
 |---|---|
 | Re-master — fetch 4.7 GB, verify sha256, patch El Torito, serve | 2m23s |
 | CDI import from the pod's Service | 2m20s |
 | Install, virtio-win tools, guest agent, sysprep, shutdown | 16m43s |
-| **Total** | **21m26s** |
+| **Total (unhardened)** | **21m26s** |
 
-**Anything much past thirty minutes is stuck, not slow.** Read the console
+CIS hardening adds ~15 minutes (44 controls, measured 2026-09-06).
+
+**Anything much past forty-five minutes with CIS, or thirty without, is stuck.** Read the console
 percentage twice, minutes apart — if it goes down, Setup is looping and the boot
 order is wrong (see above). Otherwise check the re-master pod's logs.
 
@@ -371,10 +388,9 @@ repository and re-checks afterwards, but a repository created *by* the push did
 not exist to be checked beforehand — so create
 `quay.io/zigfreed/win2k22-golden` as **Private** in the Quay UI first.
 
-**It is `win2k22-golden`, not `win2k22-cis-l1-golden`.** What this publishes is
-the *unhardened* build, and tags are immutable — a repository name claiming L1
-would make that claim for ever on media that never had it. PR 2 publishes
-`win2k22-cis-l1-golden` separately.
+**The default is now `win2k22-cis-l1-golden`**, matching the CIS-hardened build.
+For unhardened builds, override with
+`QUAY_WINDOWS_REPO=quay.io/zigfreed/win2k22-golden` and `-e cis_level=none`.
 
 ### What it needs
 
@@ -408,8 +424,7 @@ would make that claim for ever on media that never had it. PR 2 publishes
 
 ## Where this sits
 
-1. **This skill** — build the image on sandbox.
-2. PR 2 — harden it with `ansible-lockdown/Windows-2022-CIS`, capture audit evidence.
-3. **This skill** — export, wrap as a containerdisk, push to private quay.
-4. `sales.demos` `ocpvirt-windows-image` — point a cluster at the published tag.
+1. **This skill** — build and harden the image on sandbox (CIS L1 by default).
+2. **This skill** — export, wrap as a containerdisk, push to private quay.
+3. `sales.demos` `ocpvirt-windows-image` — point a cluster at the published tag.
    Set `quay_windows_image` to the tag this printed.

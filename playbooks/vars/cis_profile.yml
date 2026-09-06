@@ -1,0 +1,39 @@
+---
+# CIS L1 Member Server profile for the Windows golden image build.
+#
+# VERIFIED 2026-09-06 on a KubeVirt VM in the sandbox cluster: 44 controls
+# applied on first pass, 0 changes on re-run (idempotent).
+#
+# hosted_virtual_system_override: false
+#   KubeVirt reports ansible_virtualization_type "NA" and
+#   ansible_system_vendor "Red Hat". The auto-detect treats this as cloud
+#   because `not 'NA' == 'VMware'` evaluates True. Cloud lockout order sets
+#   LockoutDuration before ResetLockoutCount, which fails secedit when
+#   Windows auto-sets both to 30 and decreasing Duration to 15 violates
+#   ResetLockoutCount <= LockoutDuration.
+#
+# win_skip_for_test: true
+#   Skips 11 controls that would break WinRM connectivity or the local
+#   Administrator account during the build. Without it the role cannot
+#   sysprep because the WinRM channel dies mid-run:
+#     2.2.26, 2.2.27  — break local admin connection
+#     2.3.1.3         — rename default administrator account
+#     9.3.4           — enable firewall public rules (breaks reboot)
+#     18.10.89.*      — disable WinRM basic/unencrypted/digest auth
+#     18.10.90.1      — disable remote shell access
+#   The skipped controls are documented in the role's defaults/main.yml.
+
+hosted_virtual_system_override: false
+win_skip_for_test: true
+win22cis_ansible_remediation: true
+win22cis_create_gpos: false
+win22cis_l1_ms_gpo: true
+win22cis_l1_dc_gpo: false
+win22cis_l2_dc_gpo: false
+win22cis_l2_ms_gpo: false
+win22cis_l1_dm_gpo: false
+win22cis_l1_user_gpo: false
+win22cis_l2_user_gpo: false
+win22cis_ngws_dc_gpo: false
+win22cis_ngws_ms_gpo: false
+skip_reboot: true

@@ -9,3 +9,15 @@ collections:
   # cannot disagree about the client library.
   - name: kubernetes.core
     version: "6.4.0"
+
+  # CIS L1 hardening (#24 PR 2) — the ansible-lockdown/Windows-2022-CIS role
+  # depends on all three. Pinned to what the role's meta/main.yml lists as
+  # compatible, and to what the build was verified against (2026-09-06).
+  - name: ansible.windows
+    version: "3.0.0"
+
+  - name: community.windows
+    version: "3.0.0"
+
+  - name: community.general
+    version: "10.0.0"
