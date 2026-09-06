@@ -540,6 +540,32 @@ and the consumer imported it, so the failure is not a stale-image artefact.*
 3. Keeping it outside the `windows_sysprep_at_first_logon` guard, so the
    hardening path inherits it rather than rediscovering #59.
 
+**ROOT CAUSE FOUND — the CommandLine was too long for Windows SMI.**
+The PowerShell command in `<Order>5</Order>` (PR #70) was 1031 characters.
+Windows SMI rejects `CommandLine` values over ~1024 characters with error
+`0x80220005` ("Value is invalid") during the oobeSystem pass. When *any* value
+in the oobeSystem settings is invalid, Windows invalidates the **entire** pass —
+AutoLogon, FirstLogonCommands, everything — and OOBE falls through to the manual
+region screen. This was diagnosed by reading `UnattendGC\setupact.log` off the
+raw NTFS disk using a Python MFT parser in an unprivileged pod on the cluster
+(the only way to read NTFS on a container platform with no `mount` privileges).
+
+The critical log entries:
+
+```
+Error  CSI  80220005 from CWcmScalarInstanceCore::PutCurrentValue(
+       value = { type: 8204, bytes ( 2062 ): 70006f0077006500720073... })
+Error  [oobeldr.exe] SMI data results dump:
+       Source = .../FirstLogonCommands/SynchronousCommand/[Order="5"]/CommandLine
+       Description = Value is invalid.
+Info   [oobeldr.exe] UnattendErrorFromResults: Windows could not parse or
+       process unattend answer file for pass [oobeSystem]. The answer file is invalid.
+```
+
+2062 bytes = 1031 UTF-16LE characters. The fix splits Order 5 into three shorter
+commands (Orders 5–7, each under 410 characters), renumbering the assert and
+sysprep to Orders 7 and 8.
+
 **A delivery consequence beyond the sysprep bug.** That cached file contains the
 build's local administrator password in clear text, so every published tag ships
 it. Microsoft gives this as the other reason the cleanup is mandatory before

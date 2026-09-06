@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The cached answer file delete now works — Windows SMI was rejecting the CommandLine as too long (#69).** PR #70's single PowerShell command was 1031 characters; Windows SMI rejects `SynchronousCommand/CommandLine` values over ~1024 characters with error `0x80220005` during the oobeSystem pass, which invalidates the *entire* pass — AutoLogon, FirstLogonCommands, everything — dropping OOBE to the manual region screen. Split into three short commands (Orders 5–7, each under 410 chars): delete+log, cleanup other locations, and assert. Root cause diagnosed by parsing `UnattendGC\setupact.log` off the raw NTFS disk.
+
 ### Added
 - **The post-#59 rebuild reproduces the measured build time, so the fix is free (#63).** Rebuilt on `cluster-kbjvc` 2026-09-05, teardown of the spoiled namespace through to a `Stopped` generalized VM: **21m25s**, against the **21m26s** measured in #56. One second apart on an unattended 21-minute build is the same number twice, which is what makes it a measurement rather than an anecdote — n=2 on the figure `ROADMAP.md` quotes. The guest phase reproduces on its own too: the power-off watch took **31 polls at 30s ≈ 16m**, against #56's 16m43s for install through sysprep.
 - **That is the point worth recording: deleting the cached answer files costs no measurable build time.** #59 adds five `del` targets to `FirstLogonCommands` at `<Order>5</Order>`, and a reasonable worry about putting work between first logon and `sysprep /generalize` is that it lengthens the slowest, least observable stretch of the build. It does not — the delta is inside the noise of two runs. **PR 2's rebuild loop is unaffected**, which matters because CIS hardening is the phase that pays 21 minutes per iteration.

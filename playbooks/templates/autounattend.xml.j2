@@ -203,9 +203,18 @@
                THE CMD APPROACH FROM #60 DID NOT WORK. The del ran, had
                permissions (proved by a clone test), and left the file untouched.
                2>nul & exit /b 0 discarded the only evidence that would say why.
-               This replaces it with PowerShell Remove-Item and logs before/after
-               state to C:\Windows\Temp\panther-delete.log so a rebuild answers
-               the question. Order 6 asserts the file is gone and fails the
+
+               THE INLINE-POWERSHELL APPROACH FROM #70 DID NOT WORK EITHER.
+               The single CommandLine was 1031 characters; Windows SMI rejects
+               CommandLine values over ~1024 characters with 0x80220005 ("Value
+               is invalid") during the oobeSystem pass. That invalidates the
+               ENTIRE pass — AutoLogon, FirstLogonCommands, everything — and
+               OOBE falls through to the manual region screen. Diagnosed by
+               reading UnattendGC\setupact.log off the raw NTFS with a Python
+               MFT parser in an unprivileged pod on the cluster.
+
+               Orders 5–7 split the work into three short commands, each well
+               under the limit. Order 7 asserts the file is gone and fails the
                build if not — the guard #60 should have shipped with.
 
                NOT INSIDE THE SYSPREP FLAG BELOW, DELIBERATELY. The hardening
@@ -214,24 +223,31 @@
 
                It also stops shipping windows_admin_password in clear text
                inside the published containerDisk. -->
-          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $log = 'C:\Windows\Temp\panther-delete.log'; $f = 'C:\Windows\Panther\unattend.xml'; '=== Before ===' | Out-File $log; 'exists={0}' -f (Test-Path $f) | Out-File $log -Append; if (Test-Path $f) { Get-Item $f | Format-List Name,Length,LastWriteTime,Attributes | Out-File $log -Append }; '=== Delete ===' | Out-File $log -Append; try { Remove-Item -Force -ErrorAction Stop $f; 'Remove-Item succeeded' | Out-File $log -Append } catch { 'Remove-Item failed: {0}' -f $_ | Out-File $log -Append }; '=== After ===' | Out-File $log -Append; 'exists={0}' -f (Test-Path $f) | Out-File $log -Append; if (Test-Path $f) { Get-Item $f | Format-List Name,Length,LastWriteTime,Attributes | Out-File $log -Append; Get-Acl $f | Format-List | Out-File $log -Append }; Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Windows\Panther\Autounattend.xml','C:\Windows\Panther\Unattend\unattend.xml','C:\Windows\Panther\Unattend\Autounattend.xml','C:\Windows\System32\Sysprep\unattend.xml' }"</CommandLine>
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $f='C:\Windows\Panther\unattend.xml'; $l='C:\Windows\Temp\panther-delete.log'; 'before: exists={0}' -f (Test-Path $f) | Out-File $l; try { Remove-Item -Force -ErrorAction Stop $f; 'delete: ok' | Out-File $l -Append } catch { 'delete: FAILED {0}' -f $_ | Out-File $l -Append }; 'after: exists={0}' -f (Test-Path $f) | Out-File $l -Append }"</CommandLine>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add"
                             xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
           <Order>6</Order>
+          <Description>Remove other cached answer file locations (#69)</Description>
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Windows\Panther\Autounattend.xml','C:\Windows\Panther\Unattend\unattend.xml','C:\Windows\Panther\Unattend\Autounattend.xml','C:\Windows\System32\Sysprep\unattend.xml' }"</CommandLine>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add"
+                            xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>7</Order>
           <Description>Assert the cached answer file is gone (#69)</Description>
           <!-- THE GUARD #60 SHOULD HAVE SHIPPED WITH. If the file survives the
                delete, this stops FirstLogonCommands — sysprep never runs, the
                VM stays up, the build times out, and the broken image never
                publishes. Read C:\Windows\Temp\panther-delete.log via WinRM or
                offline with qemu-nbd (docs/design.md §10.2.2). -->
-          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { if (Test-Path 'C:\Windows\Panther\unattend.xml') { 'ASSERT FAILED: cached answer file still present after delete' | Out-File 'C:\Windows\Temp\panther-delete.log' -Append; exit 1 } }"</CommandLine>
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { if (Test-Path 'C:\Windows\Panther\unattend.xml') { 'ASSERT FAILED: file still present' | Out-File 'C:\Windows\Temp\panther-delete.log' -Append; exit 1 } }"</CommandLine>
         </SynchronousCommand>
 {% if windows_sysprep_at_first_logon %}
         <SynchronousCommand wcm:action="add"
                             xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-          <Order>7</Order>
+          <Order>8</Order>
           <Description>Generalize and shut down</Description>
           <!-- FLAG-GUARDED ON PURPOSE. Sysprep here means the build needs no
                WinRM round-trip to finish, which is what keeps PR 1 free of the
