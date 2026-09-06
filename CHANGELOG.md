@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Worktrees mandatory for code changes (#77).** Strengthened CLAUDE.md from
+  defensive habits only to an unconditional worktree rule — the main checkout
+  stays on `main` as read-only. Matches `sales.demos` #267.
+
 ### Added
 - **CIS L1 Member Server hardening in the Windows build (#24 PR 2).** `build_windows_image.yml` now applies `ansible-lockdown/Windows-2022-CIS` to the build VM over WinRM before sysprep. Default is `windows_cis_harden=true`. Three plays: install, harden, cleanup. The hardening profile forces non-cloud lockout order (`hosted_virtual_system_override: false`) to avoid the secedit failure on KubeVirt, and `win_skip_for_test: true` skips 11 controls that would kill WinRM mid-run. Verified 2026-09-06: 44 controls applied, idempotent on re-run.
 - **`playbooks/vars/cis_profile.yml`** — CIS role configuration extracted to a vars file. Documents the KubeVirt auto-detect bug and the 11 skipped controls with reasons.
