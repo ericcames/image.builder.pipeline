@@ -245,19 +245,26 @@
           docs/design.md §4 — this repo resolves every credential from the
           environment and stores none of them.
 
-    - name: Assert this is not the demo cluster
-      # Building on the environment someone might be presenting from is the
-      # mistake worth making impossible rather than merely documenting.
+    - name: Assert demo_cluster_hostname is provided
       ansible.builtin.assert:
         that:
-          - not (k8s_auth_host is search(demo_cluster_marker))
+          - demo_cluster_hostname is defined
+          - demo_cluster_hostname | length > 0
+        fail_msg: >-
+          demo_cluster_hostname must be set (e.g. -e demo_cluster_hostname=cluster-xxxxx).
+          It identifies the demo cluster so the build refuses to run there.
+          See sales.demos inventory/group_vars/<env>/connection.yml for the value.
+      when: windows_build_state == 'present'
+
+    - name: Assert this is not the demo cluster
+      ansible.builtin.assert:
+        that:
+          - not (k8s_auth_host is search(demo_cluster_hostname))
         fail_msg: >-
           K8S_AUTH_HOST looks like the demo cluster ({{ k8s_auth_host }}).
           Builds run on sandbox; demo consumes the published tag and never
-          hosts a build. Override with -e demo_cluster_marker='' if you are
+          hosts a build. Override with -e demo_cluster_hostname='' if you are
           certain.
-      vars:
-        demo_cluster_marker: "{{ demo_cluster_hostname | default('cluster-6d5xj', true) }}"
       when: windows_build_state == 'present'
 
     - name: Assert the ISO source is valid
