@@ -571,10 +571,41 @@ build's local administrator password in clear text, so every published tag ships
 it. Microsoft gives this as the other reason the cleanup is mandatory before
 delivery. It applies to both tags currently in the repository.
 
-**The consumer was never at fault.** `sales.demos`' sysprep Secret, CD-ROM,
-`volumeStatus: sysprep -> sdb` and answer-file XML were verified correct on both
-the pre-fix and post-fix runs — including the `oobeSystem` locale settings that
-suppress the very screen the clone stops on.
+**The consumer had two bugs of its own, both masked by the cached file.**
+Once the producer-side fix shipped (`20260906-0300`, PR #71) and the cache was
+gone, the clone still stopped — twice — before reaching the desktop:
+
+1. **Wrong filename on the sysprep CD.** The `kubernetes_secret` key was
+   `autounattend.xml`. After sysprep, Windows mini-setup searches for
+   `Unattend.xml` on removable media — `Autounattend.xml` is the fresh-install
+   name only. Windows never opened the file. Fix: rename the key to
+   `Unattend.xml` (`sales.demos` PR #251).
+
+2. **ComputerName exceeded the 15-character NetBIOS limit.** With the filename
+   fixed, Windows found the file on `D:\` and reported: *"Windows could not
+   parse or process unattend answer file [D:\unattend.xml] for pass
+   [specialize]. The answer file is invalid."* The `ComputerName` was
+   `sd-win-small-1cpu-2gb` (21 chars). Fix: a `tier_windows_hostname` map that
+   abbreviates each tier to 15 characters (`sd-win-sm-1c-2g`, etc.).
+
+![OOBE region screen still appears after producer-side cache fix](images/win69-oobe-still-appears-after-cache-fix.png)
+
+*After the producer fix (`20260906-0300`), the clone still stops at the OOBE
+region screen. The cached file is gone, but Windows never reads the CD because
+the key is `autounattend.xml` — the wrong name for post-sysprep mini-setup.*
+
+![Specialize pass rejects the answer file — ComputerName too long](images/win69-specialize-invalid-computername.png)
+
+*With the key renamed to `Unattend.xml`, Windows finds the file on `D:\` for the
+first time — and rejects it. The `ComputerName` `sd-win-small-1cpu-2gb` (21
+chars) exceeds the 15-character NetBIOS limit, invalidating the specialize pass.*
+
+**Three stacked bugs, each masking the next.** The producer's cached file
+(precedence 3) prevented Windows from ever reaching the consumer's CD
+(precedence 5). Fixing the cache revealed the filename mismatch. Fixing the
+filename revealed the too-long ComputerName. Each fix was necessary, and the
+diagnostic order matters — testing the consumer's answer file against a
+still-cached image proves nothing about the consumer.
 
 ### 10.3 Consumer discovery
 
