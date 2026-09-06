@@ -607,6 +607,11 @@ filename revealed the too-long ComputerName. Each fix was necessary, and the
 diagnostic order matters — testing the consumer's answer file against a
 still-cached image proves nothing about the consumer.
 
+![Clone reaches the Windows lock screen — end-to-end proof](images/win69-clone-reaches-desktop.png)
+
+*With all three fixes applied, a clone of `20260906-0300` specializes
+automatically and reaches the Windows lock screen with no manual intervention.*
+
 ### 10.3 Consumer discovery
 
 Unlike AMI tag-based filtering (§9.1), containerDisk discovery uses a single
