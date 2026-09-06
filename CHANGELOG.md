@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **README: corrected Quay.io repo visibility (#73).** The pipeline diagram said `Quay.io (private)` but the RHEL CIS containerDisk repo is public — only the Windows repo is private. Added a Quay.io private repo entitlement section with screenshot documenting that other SEs need at least a Developer plan or Red Hat developer subscription for private repos.
 - **Removed hardcoded RHDP cluster ID from `build_windows_image.yml` (#64).** The demo-cluster guard defaulted `demo_cluster_marker` to a live cluster ID committed in a public repo. Now requires `demo_cluster_hostname` as an extra-var with no default — the build fails closed when it is absent, consistent with how `windows_eval_expires` is handled. The guard logic and override escape hatch are unchanged.
 - **The cached answer file delete now works — Windows SMI was rejecting the CommandLine as too long (#69).** PR #70's single PowerShell command was 1031 characters; Windows SMI rejects `SynchronousCommand/CommandLine` values over ~1024 characters with error `0x80220005` during the oobeSystem pass, which invalidates the *entire* pass — AutoLogon, FirstLogonCommands, everything — dropping OOBE to the manual region screen. Split into three short commands (Orders 5–7, each under 410 chars): delete+log, cleanup other locations, and assert. Root cause diagnosed by parsing `UnattendGC\setupact.log` off the raw NTFS disk.
 

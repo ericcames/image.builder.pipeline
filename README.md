@@ -26,7 +26,7 @@ Red Hat Image Builder (console.redhat.com)
    AWS EC2 (temp instance)   containerDisk wrap
         │                         │
         ▼ SCAP results            ▼ podman push
-   OpenSCAP Parser           Quay.io (private)
+   OpenSCAP Parser           Quay.io
         │                         │
         ▼                         ▼
    data.json → rego_policy    DataImportCron →
@@ -38,10 +38,10 @@ Red Hat Image Builder (console.redhat.com)
 | Platform | Output | CIS Benchmark | Status |
 |----------|--------|--------------|--------|
 | RHEL 9 | AMI | CIS Level 1 Server | **Phase 1 — Complete** (score 98.07 / 95 gate — see [status](docs/cis-l1-rhel9-status.md)) |
-| RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Complete** |
+| RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Complete** (public repo) |
 | RHEL 8 | AMI | CIS Level 1 Server | Phase 2 |
 | RHEL 10 | AMI | CIS Level 1 Server | Phase 2 — pending benchmark |
-| Windows Server 2022 | containerDisk | CIS Level 1 | Phase 3 |
+| Windows Server 2022 | containerDisk | CIS Level 1 | Phase 3 (private repo — see [Quay.io entitlement](#quayio-private-repo-entitlement)) |
 
 See [ROADMAP.md](ROADMAP.md) for full platform schedule and
 [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
@@ -133,6 +133,24 @@ containerdisk tag in a private quay repo.**
 That split is the rule in `CLAUDE.md`: *"Producer/consumer across repos is
 intentional. Different audiences, different lifecycles."* Hardening and
 compliance evidence belong here; running demos belongs there.
+
+## Quay.io private repo entitlement
+
+The Windows containerDisk is published to a **private** Quay.io repository
+(Microsoft licensing prohibits public redistribution). The RHEL containerDisk
+is public and needs no special entitlement.
+
+The free Open Source plan on Quay.io includes **0 private repositories**. To
+host the Windows image, you need at least the Developer plan (5 private repos,
+$15/mo) or a Red Hat developer subscription that includes private repo
+entitlement. Without it, Quay shows this warning:
+
+![Quay.io private repo entitlement notification](docs/images/quay-private-repo-entitlement.png)
+
+If you are a Red Hat associate, open a support case requesting a developer
+subscription with private Quay.io repo access. The existing private repo
+continues to function while the notification is active — it is a warning, not
+a block.
 
 ## License
 
