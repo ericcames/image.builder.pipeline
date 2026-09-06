@@ -1,16 +1,31 @@
 ---
 # ===========================================================================
-# build_windows_image.yml — build a Windows Server 2022 image on OpenShift
-# Virtualization. Issue #24, PR 1 of 3: build only, unhardened.
+# build_windows_image.yml — build a CIS L1 hardened Windows Server 2022
+# image on OpenShift Virtualization. Issue #24.
 #
 #   export K8S_AUTH_HOST=https://api.<cluster>:6443
 #   export K8S_AUTH_API_KEY=<token>
+#   export WINDOWS_ADMIN_PASSWORD=<password>
 #   ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
-#     -e windows_iso_path=/path/to/SERVER_EVAL_x64FRE_en-us.iso
+#     -e windows_eval_expires=2027-03-04 \
+#     -e demo_cluster_hostname=cluster-xxxxx
+#
+#   # unhardened build (PR 1 behavior)
+#   ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
+#     -e windows_cis_harden=false -e windows_sysprep_at_first_logon=true \
+#     -e windows_eval_expires=2027-03-04 -e demo_cluster_hostname=cluster-xxxxx
 #
 #   # and the teardown, which ships with it
 #   ansible-playbook -i inventories/sample/ playbooks/build_windows_image.yml \
 #     -e windows_build_state=absent
+#
+# THREE PLAYS, ONE PIPELINE.
+#   Play 1 — infrastructure: namespace, ISO import, VM, wait for install.
+#   Play 2 — hardening: WinRM into the build VM, apply CIS L1, sysprep.
+#            Only runs when windows_cis_harden is true. The role needs
+#            Windows facts, so this is a separate play targeting the VM.
+#   Play 3 — completion: wait for the VM to stop, clean up the port-forward,
+#            report what was built.
 #
 # WHY THE CLUSTER AND NOT A LOCAL HYPERVISOR. #21 flags "a local libvirt/KVM
 # scan path — new hypervisor dependency" as its High-risk item. A KubeVirt
@@ -47,13 +62,21 @@
 # UDF filesystem is left exactly as Microsoft shipped it. Pass
 # -e windows_iso_remaster=false to go back to the stock ISO and a keypress.
 #
-# WHAT THIS DOES NOT DO YET, and where it lands:
-#   PR 2 — ansible-lockdown/Windows-2022-CIS hardening + audit-tag evidence.
-#          It sets windows_sysprep_at_first_logon=false and syspreps itself,
-#          after hardening. Generalizing first would throw the hardening away.
-#   PR 3 — VirtualMachineExport, containerdisk wrap, podman push to private
-#          quay, and docs/design.md §10 (the containerDisk contract, parallel
-#          to §9 for AMIs).
+# CIS HARDENING (#24 PR 2). ansible-lockdown/Windows-2022-CIS applied as
+# L1 Member Server. KubeVirt reports ansible_virtualization_type "NA", which
+# the role's auto-detect treats as cloud — hosted_virtual_system_override
+# forces non-cloud lockout order and avoids a secedit failure on rule 1.2.1.
+# win_skip_for_test skips 11 controls that would kill WinRM mid-run.
+# Verified 2026-09-06: 44 controls applied, idempotent on re-run.
+#
+# THE PORT-FORWARD CAN DIE. kubectl port-forward uses a WebSocket, and
+# connections exceeding ~15 minutes have dropped during testing. The CIS role
+# takes ~15 minutes. If it dies, the task fails with a WinRM connection
+# error — re-run the playbook; the role is idempotent and the completed
+# controls are preserved.
+#
+# WHAT publish_windows_containerdisk.yml DOES is next: VirtualMachineExport,
+# containerdisk wrap, podman push to private quay. It expects a Stopped VM.
 # ===========================================================================
 
 - name: Build a Windows Server 2022 image on OpenShift Virtualization
@@ -204,9 +227,16 @@
     winrm_port: 5986
     build_marker_file: "build-complete.txt"
 
-    # PR 1 syspreps from the answer file, so the build needs no WinRM round
-    # trip and this PR stays free of the Windows collections. PR 2 flips this.
-    windows_sysprep_at_first_logon: true
+    # CIS hardening. When true (the default), the playbook applies
+    # ansible-lockdown/Windows-2022-CIS L1 Member Server after install,
+    # then syspreps via WinRM. When false, behaves as PR 1 (sysprep from
+    # the answer file, no hardening, no WinRM round trip).
+    windows_cis_harden: true
+    windows_sysprep_at_first_logon: false
+
+    # Port-forward from this machine to the build VM's WinRM. 15986 rather
+    # than 5986 to avoid colliding with a local WinRM listener.
+    winrm_forward_port: 15986
 
     # The local Administrator password baked into the image. Never committed:
     # supply with -e, or export WINDOWS_ADMIN_PASSWORD.
@@ -266,6 +296,44 @@
           hosts a build. Override with -e demo_cluster_hostname='' if you are
           certain.
       when: windows_build_state == 'present'
+
+    - name: Assert CIS hardening and sysprep are consistent
+      ansible.builtin.assert:
+        that:
+          - not (windows_cis_harden | bool) or not (windows_sysprep_at_first_logon | bool)
+        fail_msg: >-
+          windows_cis_harden requires windows_sysprep_at_first_logon=false.
+          Generalizing before hardening throws the hardening away — the CIS
+          role needs a running OS to harden, and sysprep resets it to OOBE.
+      when: windows_build_state == 'present'
+
+    - name: Assert kubectl is available for CIS port-forward
+      ansible.builtin.command: kubectl version --client --output=yaml
+      register: kubectl_check
+      changed_when: false
+      failed_when: kubectl_check.rc != 0
+      when:
+        - windows_build_state == 'present'
+        - windows_cis_harden | bool
+
+    - name: Assert the CIS role is installed
+      ansible.builtin.stat:
+        path: "{{ lookup('config', 'DEFAULT_ROLES_PATH') | first }}/windows_2022_cis/meta/main.yml"
+      register: cis_role_stat
+      when:
+        - windows_build_state == 'present'
+        - windows_cis_harden | bool
+
+    - name: Fail if the CIS role is not installed
+      ansible.builtin.assert:
+        that:
+          - cis_role_stat.stat.exists | default(false)
+        fail_msg: >-
+          The windows_2022_cis role is not installed. Install it with:
+          ansible-galaxy role install -r roles/requirements.yml
+      when:
+        - windows_build_state == 'present'
+        - windows_cis_harden | bool
 
     - name: Assert the ISO source is valid
       ansible.builtin.assert:
@@ -1095,6 +1163,106 @@
         - guest_info.resources[0].status.guestOSInfo.id | default('') | length > 0
       when: not windows_sysprep_at_first_logon
 
+    # --- CIS hardening: WinRM tunnel from this machine to the build VM -----
+    - name: Set up WinRM access to the build VM
+      when:
+        - windows_build_state == 'present'
+        - windows_cis_harden | bool
+        - not windows_sysprep_at_first_logon | bool
+      block:
+        - name: Create a Service for WinRM on the build VM
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: "{{ build_vm_name }}-winrm"
+                namespace: "{{ build_namespace }}"
+                labels:
+                  app.kubernetes.io/managed-by: image-builder-pipeline
+              spec:
+                selector:
+                  kubevirt.io/domain: "{{ build_vm_name }}"
+                ports:
+                  - name: winrm-https
+                    port: "{{ winrm_port }}"
+                    targetPort: "{{ winrm_port }}"
+
+        - name: Create a temporary kubeconfig for port-forward
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .kubeconfig
+          register: pf_kubeconfig
+          changed_when: false
+
+        - name: Write the kubeconfig
+          ansible.builtin.copy:
+            dest: "{{ pf_kubeconfig.path }}"
+            mode: "0600"
+            content: |
+              apiVersion: v1
+              kind: Config
+              clusters:
+                - name: build
+                  cluster:
+                    server: {{ k8s_auth_host }}
+                    insecure-skip-tls-verify: {{ (not k8s_verify_ssl) | bool | lower }}
+              users:
+                - name: build
+                  user:
+                    token: {{ k8s_auth_api_key }}
+              contexts:
+                - name: build
+                  context:
+                    cluster: build
+                    user: build
+                    namespace: {{ build_namespace }}
+              current-context: build
+          no_log: true
+          changed_when: false
+
+        - name: Start port-forward to the build VM's WinRM
+          # BACKGROUND PROCESS, cleaned up in Play 3. If the playbook dies
+          # before cleanup, `kill $(cat /tmp/ibp-pf.pid)` clears it.
+          ansible.builtin.shell: |
+            nohup kubectl port-forward \
+              --kubeconfig={{ pf_kubeconfig.path }} \
+              -n {{ build_namespace }} \
+              svc/{{ build_vm_name }}-winrm \
+              {{ winrm_forward_port }}:{{ winrm_port }} \
+              >/dev/null 2>&1 &
+            PF_PID=$!
+            echo $PF_PID > /tmp/ibp-pf.pid
+            echo $PF_PID
+          register: pf_result
+          changed_when: false
+
+        - name: Record the port-forward for cleanup
+          ansible.builtin.set_fact:
+            port_forward_pid: "{{ pf_result.stdout | trim }}"
+            cis_kubeconfig_path: "{{ pf_kubeconfig.path }}"
+
+        - name: Wait for the port-forward to accept connections
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: "{{ winrm_forward_port }}"
+            timeout: 120
+            delay: 5
+
+        - name: Register the build VM as a dynamic inventory host
+          ansible.builtin.add_host:
+            name: build_vm
+            groups: build_targets
+            ansible_host: 127.0.0.1
+            ansible_port: "{{ winrm_forward_port }}"
+            ansible_connection: winrm
+            ansible_winrm_transport: ntlm
+            ansible_winrm_server_cert_validation: ignore
+            ansible_user: Administrator
+            ansible_password: "{{ windows_admin_password }}"
+            build_marker_file: "{{ build_marker_file }}"
+
     - name: Wait for the build to sysprep and shut down
       when: windows_sysprep_at_first_logon
       block:
@@ -1140,17 +1308,161 @@
               the console:
               virtctl vnc {{ build_vm_name }} -n {{ build_namespace }}
 
-    - name: Report what was built
+    - name: Report the install phase
       ansible.builtin.debug:
         msg:
-          - "Windows Server 2022 built in {{ build_namespace }} on {{ k8s_auth_host }}."
+          - "Windows Server 2022 installed in {{ build_namespace }} on {{ k8s_auth_host }}."
           - "Disk:           {{ build_vm_name }}-root ({{ target_disk_size }})"
           - >-
             Media:          {{ iso_variant_want }} ISO —
             {{ 're-mastered on the cluster, no keypress needed'
                if iso_variant_want == 'noprompt'
                else 'WATCH THE CONSOLE, Setup asks for a keypress' }}
-          - "Sysprepped:     {{ windows_sysprep_at_first_logon }}"
+          - >-
+            CIS:            {{ 'L1 Member Server (Play 2 next)' if windows_cis_harden | bool
+                              else 'none — windows_cis_harden is false' }}
+          - >-
+            Sysprep:        {{ 'answer file (already done)'
+                              if windows_sysprep_at_first_logon | bool
+                              else ('WinRM after CIS (Play 2)'
+                                    if windows_cis_harden | bool
+                                    else 'none — VM left running for inspection') }}
           - "EVAL EXPIRES:   {{ windows_eval_expires }} — put this in the run-sheet."
-          - "Next:           PR 2 hardens it, PR 3 exports and publishes it."
           - "Tear down with: -e windows_build_state=absent"
+
+# ===========================================================================
+# Play 2 — CIS L1 hardening + sysprep
+#
+# Runs ONLY when windows_cis_harden is true AND add_host created 'build_vm'.
+# If windows_cis_harden is false or windows_sysprep_at_first_logon is true,
+# Ansible sees no host named build_vm and skips this play entirely.
+# ===========================================================================
+
+- name: Apply CIS L1 hardening to the build VM
+  hosts: build_vm
+  gather_facts: false
+
+  vars_files:
+    - vars/cis_profile.yml
+
+  tasks:
+    - name: Wait for WinRM to be ready
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Gather Windows facts
+      ansible.builtin.setup:
+
+    - name: Wait for FirstLogonCommands to finish
+      # The build marker is written by Order 4, after the guest agent (2),
+      # virtio drivers (1), and WinRM (3). It is the last thing before the
+      # cached answer file delete (5-7) and sysprep (8, if enabled).
+      ansible.windows.win_stat:
+        path: "C:\\Windows\\Temp\\{{ build_marker_file }}"
+      register: marker
+      retries: 30
+      delay: 10
+      until: marker.stat.exists | default(false)
+
+    - name: Apply CIS L1 Member Server hardening
+      ansible.builtin.include_role:
+        name: windows_2022_cis
+
+    - name: Record CIS success on localhost for Play 3
+      ansible.builtin.set_fact:
+        cis_applied: true
+      delegate_to: localhost
+      delegate_facts: true
+
+    - name: Generalize and shut down
+      # async because sysprep shuts down the VM, which kills WinRM before
+      # the command can report completion. Fire and forget — Play 3 detects
+      # the shutdown by watching the VirtualMachine status.
+      ansible.windows.win_command:
+        cmd: >-
+          C:\Windows\System32\Sysprep\sysprep.exe
+          /generalize /oobe /shutdown /quiet
+      async: 120
+      poll: 0
+
+# ===========================================================================
+# Play 3 — wait for the VM to stop, clean up the tunnel, report
+#
+# Runs on localhost regardless of whether Play 2 succeeded or failed.
+# ===========================================================================
+
+- name: Complete the build
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    build_vm_name: "win2k22-build"
+    build_namespace: "image-factory-windows"
+    build_wait_retries: 120
+    build_wait_delay: 30
+    k8s_auth_host: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_HOST') }}"
+    k8s_auth_api_key: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_API_KEY') }}"
+    k8s_verify_ssl: "{{ lookup('ansible.builtin.env', 'K8S_AUTH_VERIFY_SSL') | default(false, true) | bool }}"
+
+  environment:
+    K8S_AUTH_HOST: "{{ k8s_auth_host }}"
+    K8S_AUTH_API_KEY: "{{ k8s_auth_api_key }}"
+    K8S_AUTH_VERIFY_SSL: "{{ k8s_verify_ssl | string }}"
+
+  tasks:
+    - name: Wait for the VM to shut down after CIS hardening
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ build_vm_name }}"
+        namespace: "{{ build_namespace }}"
+      register: build_vm_final
+      retries: "{{ build_wait_retries }}"
+      delay: "{{ build_wait_delay }}"
+      until:
+        - build_vm_final.resources | default([]) | length > 0
+        - build_vm_final.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
+      when: cis_applied | default(false)
+
+    - name: Kill the port-forward process
+      ansible.builtin.command: "kill {{ port_forward_pid }}"
+      changed_when: true
+      failed_when: false
+      when: port_forward_pid is defined
+
+    - name: Remove the port-forward PID file
+      ansible.builtin.file:
+        path: /tmp/ibp-pf.pid
+        state: absent
+      changed_when: false
+      when: port_forward_pid is defined
+
+    - name: Remove the temporary kubeconfig
+      ansible.builtin.file:
+        path: "{{ cis_kubeconfig_path }}"
+        state: absent
+      changed_when: false
+      when: cis_kubeconfig_path is defined
+
+    - name: Remove the WinRM Service
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Service
+        name: "{{ build_vm_name }}-winrm"
+        namespace: "{{ build_namespace }}"
+      when: cis_applied | default(false)
+
+    - name: Report the completed build
+      ansible.builtin.debug:
+        msg:
+          - >-
+            {{ 'CIS L1 hardened, sysprepped and STOPPED'
+               if cis_applied | default(false)
+               else 'CIS hardening DID NOT COMPLETE — the VM may not be generalized' }}
+            — {{ build_vm_name }} in {{ build_namespace }}
+          - >-
+            Next: publish with playbooks/publish_windows_containerdisk.yml
+          - "Tear down with: -e windows_build_state=absent"
+      when: port_forward_pid is defined

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **CIS L1 Member Server hardening in the Windows build (#24 PR 2).** `build_windows_image.yml` now applies `ansible-lockdown/Windows-2022-CIS` to the build VM over WinRM before sysprep. Default is `windows_cis_harden=true`. Three plays: install, harden, cleanup. The hardening profile forces non-cloud lockout order (`hosted_virtual_system_override: false`) to avoid the secedit failure on KubeVirt, and `win_skip_for_test: true` skips 11 controls that would kill WinRM mid-run. Verified 2026-09-06: 44 controls applied, idempotent on re-run.
+- **`playbooks/vars/cis_profile.yml`** — CIS role configuration extracted to a vars file. Documents the KubeVirt auto-detect bug and the 11 skipped controls with reasons.
+- **`roles/requirements.yml`** — installs the CIS role from `ansible-lockdown/Windows-2022-CIS`.
+- **`collections/requirements.yml` gains `ansible.windows`, `community.windows`, `community.general`** — the CIS role's dependencies, pinned to the versions verified against.
+- **`publish_windows_containerdisk.yml` now defaults to `cis_level=L1` and `win2k22-cis-l1-golden`**, matching the build default. Override both with `-e cis_level=none` and `QUAY_WINDOWS_REPO` for unhardened builds.
+
+### Changed
+- **`windows_sysprep_at_first_logon` defaults to `false`** (was `true`). The build now syspreps via WinRM after hardening rather than from the answer file. Pass `-e windows_cis_harden=false -e windows_sysprep_at_first_logon=true` for the old PR 1 behavior.
+
 ### Fixed
 - **README: corrected Quay.io repo visibility (#73).** The pipeline diagram said `Quay.io (private)` but the RHEL CIS containerDisk repo is public — only the Windows repo is private. Added a Quay.io private repo entitlement section with screenshot documenting that other SEs need at least a Developer plan or Red Hat developer subscription for private repos.
 - **Removed hardcoded RHDP cluster ID from `build_windows_image.yml` (#64).** The demo-cluster guard defaulted `demo_cluster_marker` to a live cluster ID committed in a public repo. Now requires `demo_cluster_hostname` as an extra-var with no default — the build fails closed when it is absent, consistent with how `windows_eval_expires` is handled. The guard logic and override escape hatch are unchanged.

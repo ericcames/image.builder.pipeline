@@ -1,0 +1,9 @@
+---
+roles:
+  # CIS L1 hardening for Windows Server 2022. MIT license.
+  # Applied by playbooks/build_windows_image.yml when windows_cis_harden=true.
+  #
+  # Install:  ansible-galaxy role install -r roles/requirements.yml
+  - src: https://github.com/ansible-lockdown/Windows-2022-CIS.git
+    name: windows_2022_cis
+    version: devel

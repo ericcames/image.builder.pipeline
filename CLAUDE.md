@@ -84,7 +84,7 @@ the rules that came out of it, and each one is paid for.
 - Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
 - Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. Monthly scheduled rebuild via GitHub Actions (`containerdisk-rebuild.yml`). See `docs/design.md` §10 for the containerDisk contract.
 - Phase 2 (CIS L2, RHEL 8) — not started
-- Phase 3 (Windows containerDisk) — **In progress.** Unattended build playbook shipped (`build_windows_image.yml`, #24); ISO re-master for no-keypress boot done (#40); skill documented. CIS hardening, sysprep, and Quay publish still pending. Consumer is `sales.demos#3`, already shipped.
+- Phase 3 (Windows containerDisk) — **In progress.** Build and CIS L1 hardening done (`build_windows_image.yml`, #24). ISO re-master for no-keypress boot (#40), CIS hardening over WinRM (44 controls, verified 2026-09-06), and export/publish (`publish_windows_containerdisk.yml`) all shipped. Audit-tag evidence capture still pending. Consumer is `sales.demos#3`, already shipped.
 
 See `ROADMAP.md` for the full plan.
 

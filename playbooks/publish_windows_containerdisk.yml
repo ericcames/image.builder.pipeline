@@ -54,11 +54,12 @@
     root_volume: "{{ build_vm_name }}-root"
     export_name: "{{ build_vm_name }}-export"
 
-    # NOT win2k22-cis-l1-golden, and the distinction is permanent. What this
-    # publishes is the UNHARDENED build; PR 2 hardens it and publishes
-    # win2k22-cis-l1-golden. Tags are immutable, so a repository name claiming
-    # L1 would make that claim for ever on media that never had it.
-    quay_default: "quay.io/zigfreed/win2k22-golden"
+    # Defaults to the CIS-hardened repo, because the build playbook defaults
+    # to windows_cis_harden=true. Override both repo and cis_level when
+    # publishing an unhardened build:
+    #   -e cis_level=none QUAY_WINDOWS_REPO=quay.io/zigfreed/win2k22-golden
+    quay_default: "quay.io/zigfreed/win2k22-cis-l1-golden"
+    cis_level: "L1"
     quay_repo: "{{ lookup('ansible.builtin.env', 'QUAY_WINDOWS_REPO') | default(quay_default, true) }}"
     quay_registry: "{{ quay_repo.split('/')[0] }}"
     quay_path: "{{ quay_repo.split('/')[1:] | join('/') }}"
@@ -386,10 +387,8 @@
               - "com.redhat.cis.pipeline=image-builder-pipeline"
               - --label
               - "com.redhat.cis.os=windows-2022"
-              # NOT L1, and said out loud. PR 2 hardens; this is the plain
-              # build, and a label that lied would outlive everyone who knew.
               - --label
-              - "com.redhat.cis.level=none"
+              - "com.redhat.cis.level={{ cis_level }}"
               - --label
               - "image-factory/os-edition={{ windows_edition }}"
               # THE EXPIRY, ON THE ARTIFACT. This is the one label a person
@@ -469,7 +468,7 @@
               quay_image: "{{ quay_repo }}:{{ build_date_short }}"
               quay_tag: "{{ build_date_short }}"
               platform: "windows-2022-containerdisk"
-              cis_level: "none"
+              cis_level: "{{ cis_level }}"
               edition: "{{ windows_edition }}"
               eval_expires: "{{ windows_eval_expires }}"
               qcow2_bytes: "{{ qcow2_stat.stat.size | default(0) }}"
@@ -485,7 +484,7 @@
                 — {{ quay_repo }}:{{ build_date_short }}
               - "qcow2:          {{ (qcow2_stat.stat.size | default(0) | int / 1073741824) | round(2) }} GiB"
               - "EVAL EXPIRES:   {{ windows_eval_expires }} — stamped on the image as image-factory/eval-expires"
-              - "CIS level:      none — PR 2 publishes win2k22-cis-l1-golden"
+              - "CIS level:      {{ cis_level }}"
               - "Record:         {{ output_dir }}/publish_output.json"
               - >-
                 {{ 'Consumer: set quay_windows_image in sales.demos to the tag above.'

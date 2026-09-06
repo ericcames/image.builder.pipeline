@@ -111,10 +111,10 @@ compliance evidence.
 |------|--------|
 | Unattended install + virtio drivers + QEMU guest agent | **Done** — `playbooks/build_windows_image.yml`; built on the cluster via plain KubeVirt VMs, no operator installed. **Measured 21m26s** end to end, ending in a `Stopped`, generalized VM |
 | ISO re-mastered onto `efisys_noprompt.bin` in a cluster pod — the build needs nobody at the console | **Done** — [#40](https://github.com/ericcames/image.builder.pipeline/issues/40); `playbooks/scripts/remaster_iso.sh`, Red Hat's `modify-windows-iso-file` recipe |
-| ansible-lockdown/Windows-2022-CIS hardening with patch tags | Pending |
-| WinRM over HTTPS on 5986 (consumer contract) | Pending |
+| ansible-lockdown/Windows-2022-CIS L1 hardening over WinRM | **Done** — Play 2 of `build_windows_image.yml`; port-forward to the build VM's WinRM, CIS role, then sysprep. 44 controls applied, idempotent. `hosted_virtual_system_override: false` avoids the secedit lockout-order bug on KubeVirt; `win_skip_for_test: true` skips 11 WinRM-breaking controls |
+| WinRM over HTTPS on 5986 (consumer contract) | **Done** — configured by the answer file's FirstLogonCommands, verified working through CIS hardening |
 | Audit-tag evidence capture | Pending |
-| sysprep, wrap as containerDisk, `podman push` to Quay | **Done** — `playbooks/publish_windows_containerdisk.yml`; `VirtualMachineExport` → gzip → sparse expand → qcow2 → `FROM scratch`. Publishes `quay.io/zigfreed/win2k22-golden`, **private** — not `win2k22-cis-l1-golden`, which PR 2 earns |
+| sysprep, wrap as containerDisk, `podman push` to Quay | **Done** — `playbooks/publish_windows_containerdisk.yml`; `VirtualMachineExport` → gzip → sparse expand → qcow2 → `FROM scratch`. Publishes `quay.io/zigfreed/win2k22-cis-l1-golden`, **private** |
 | `data.json` generator for `golden_images/os/windows/server_2022/` | Pending |
 | `docs/design.md` §10 — add Windows-specific content (§10 exists for RHEL 9; Windows needs its own entries) | **Done** — §10.1/10.2 carry the Windows repo, labels and `cis.level=none`; §10.2.1 is the export path |
 
