@@ -94,7 +94,32 @@ See `ROADMAP.md` for the full plan.
 - **`main` is protected** — PRs always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass via `.github/workflows/lint.yml`.
 - **Scheduled builds** — `.github/workflows/containerdisk-rebuild.yml` rebuilds the RHEL 9 containerDisk monthly (1st of month, 06:00 UTC). Manual trigger via `workflow_dispatch`. See `docs/operations.md` for the runbook.
 - **Branch naming:** `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`)
-- **Working tree is shared by multiple Claude sessions.** Re-run `git branch --show-current` immediately before `git add` and `git commit`. Prefer `git add <explicit paths>` over `git add -A`. Use `gh pr create --head <branch>` rather than relying on checkout state.
+- **Always use an isolated worktree for code changes.** Do not create branches,
+  edit files, or commit in the main checkout — treat it as read-only. The main
+  checkout stays on `main` and serves as the stable home base for read-only work.
+
+  A worktree is a second checkout in a sibling directory, sharing one `.git`
+  object store. Each session gets its own branch, index, and working tree — Git
+  enforces that no two worktrees can be on the same branch.
+
+  ```bash
+  git worktree add ../image.builder.pipeline-<slug> <branch-name>
+  git worktree list
+  cd ../image.builder.pipeline-<slug>
+  # ... work, commit, push, PR ...
+  git worktree remove ../image.builder.pipeline-<slug>
+  ```
+
+  Claude Code's Agent tool accepts `isolation: "worktree"` and automates this.
+
+  **This is mandatory, not a suggestion.** The conditional rule ("use a worktree
+  when multiple sessions are running") failed in practice in `sales.demos` —
+  sessions assumed they were alone until another switched the branch underneath
+  them. The unconditional rule eliminates the assumption.
+
+  The defensive habits remain as a safety net within each worktree: re-check
+  `git branch --show-current` before committing, prefer `git add <explicit paths>`
+  over `git add -A`, use `gh pr create --head <branch>`.
 - **Standing merge authorization:** Claude may merge green PRs without asking.
 - **Document before fixing:** open a GitHub issue before code changes.
 - See `.claude/skills/dev-workflow/SKILL.md` for the full development cycle.
