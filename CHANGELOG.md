@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **CIS UAC controls break WinRM mid-hardening (#79).** Disabled
+  `win22cis_rule_2_3_17_1` (Admin Approval Mode) and `win22cis_rule_2_3_17_2`
+  (elevation prompt) in `cis_profile.yml` — they change NTLM auth settings and
+  drop the WinRM session with "credentials rejected". Not covered by the role's
+  `win_skip_for_test`. Also added a `fail:` task in Play 3 so a lost WinRM
+  connection fails the build instead of exiting 0.
+
 ### Changed
 - **Worktrees mandatory for code changes (#77).** Strengthened CLAUDE.md from
   defensive habits only to an unconditional worktree rule — the main checkout

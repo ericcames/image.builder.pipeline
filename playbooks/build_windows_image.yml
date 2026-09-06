@@ -1454,15 +1454,20 @@
         namespace: "{{ build_namespace }}"
       when: cis_applied | default(false)
 
+    - name: Fail if CIS hardening did not complete
+      ansible.builtin.fail:
+        msg: >-
+          CIS hardening DID NOT COMPLETE — the VM is still running and has
+          not been sysprepped. Tear down with -e windows_build_state=absent,
+          fix the profile, and rebuild.
+      when:
+        - port_forward_pid is defined
+        - not (cis_applied | default(false))
+
     - name: Report the completed build
       ansible.builtin.debug:
         msg:
-          - >-
-            {{ 'CIS L1 hardened, sysprepped and STOPPED'
-               if cis_applied | default(false)
-               else 'CIS hardening DID NOT COMPLETE — the VM may not be generalized' }}
-            — {{ build_vm_name }} in {{ build_namespace }}
-          - >-
-            Next: publish with playbooks/publish_windows_containerdisk.yml
+          - "CIS L1 hardened, sysprepped and STOPPED — {{ build_vm_name }} in {{ build_namespace }}"
+          - "Next: publish with playbooks/publish_windows_containerdisk.yml"
           - "Tear down with: -e windows_build_state=absent"
       when: port_forward_pid is defined
