@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   hardening installs or updates Microsoft Edge as a per-user AppX package.
   Sysprep refuses to generalize with per-user packages not provisioned for all
   users (`0x80073cf2`). Added an AppX cleanup step after CIS and before sysprep.
+- **Port-forward dies mid-CIS hardening (#79).** kubectl port-forward uses a
+  WebSocket that OpenShift drops after ~15 minutes. The CIS role takes ~15
+  minutes. Wrapped the port-forward in a keepalive loop that restarts it
+  automatically; WinRM reconnects on the next task. Eliminates the need to
+  re-run the playbook when the tunnel drops.
 
 ### Changed
 - **Worktrees mandatory for code changes (#77).** Strengthened CLAUDE.md from
