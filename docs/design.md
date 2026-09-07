@@ -368,10 +368,17 @@ re-checks after pushing — a repository created *by* a push did not exist to be
 checked beforehand. The check is an anonymous Quay API call and needs no
 credential of its own.
 
-**The Windows repo is deliberately not named `win2k22-cis-l1-golden`.** What it
-holds today is the unhardened build; #24's PR 2 hardens the image and publishes
-`win2k22-cis-l1-golden` separately. Tags are immutable, so a repository name
-claiming L1 would make that claim permanently, on media that never had it.
+**Two Windows repos exist, and the names are load-bearing.** `win2k22-golden`
+holds the unhardened build from PR 1; `win2k22-cis-l1-golden` holds the CIS L1
+hardened build from PRs 2–4 (#80–#83). Tags are immutable, so a repository name
+claiming L1 means that claim holds for every tag in it. The unhardened repo can
+be deleted once no consumer pins to it.
+
+**The CIS L1 image is verified end-to-end.** Published
+`win2k22-cis-l1-golden:20260907-0516` (private, 8.67 GiB, `com.redhat.cis.level=L1`,
+`image-factory/eval-expires=2027-03-04`). Consumed in `sales.demos` #294 — both
+environments repointed. `win_ping` from AAP returned `ok: 1` against the clone
+(ad-hoc #266, 2026-09-07).
 
 ### 10.2 OCI labels — the containerDisk tagging contract
 
@@ -382,7 +389,7 @@ traceability metadata in container-native format:
 |---|---|---|
 | `com.redhat.cis.pipeline` | `image-builder-pipeline` | Provenance |
 | `com.redhat.cis.os` | `rhel9` / `windows-2022` | OS identifier |
-| `com.redhat.cis.level` | `L1`, or **`none`** where the image is not hardened | CIS benchmark level |
+| `com.redhat.cis.level` | `L1` (CIS L1 hardened) or `none` (unhardened) | CIS benchmark level |
 | `com.redhat.cis.compose-id` | Image Builder compose UUID | Traceability (RHEL only — Windows has no compose) |
 | `org.opencontainers.image.created` | ISO 8601 timestamp | Build date |
 | `org.opencontainers.image.source` | Repository URL | Source repo |
@@ -395,8 +402,9 @@ whoever is about to demo:
 | `image-factory/eval-expires` | `YYYY-MM-DD` | **The 180-day clock, on the artifact.** A label on a build VM in a namespace that no longer exists helps nobody |
 | `image-factory/os-edition` | e.g. `Windows Server 2022 Standard Evaluation` | Which WIM image was installed |
 
-**`com.redhat.cis.level=none` is stated rather than omitted.** An absent label
-reads as an oversight; `none` is a claim, and it is the true one until PR 2.
+**`com.redhat.cis.level` is always stated, never omitted.** An absent label
+reads as an oversight; `none` on an unhardened image and `L1` on a hardened one
+are both claims, and they are the true ones.
 
 ### 10.2.1 Getting the disk out — Windows only
 
