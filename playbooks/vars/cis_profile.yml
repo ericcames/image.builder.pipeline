@@ -1,9 +1,8 @@
 ---
 # CIS L1 Member Server profile for the Windows golden image build.
 #
-# VERIFIED 2026-09-06 on a KubeVirt VM in the sandbox cluster. Two UAC
-# controls (2.3.17.1, 2.3.17.2) are disabled — they break NTLM mid-session
-# (#79).
+# Four controls are disabled — they break the WinRM session mid-run (#79):
+#   2.3.17.1, 2.3.17.2 (UAC), 18.9.19.4, 18.9.19.5 (GPO security refresh).
 #
 # hosted_virtual_system_override: false
 #   KubeVirt reports ansible_virtualization_type "NA" and
@@ -29,6 +28,15 @@
 #   but enabling Admin Approval Mode (2.3.17.1) combined with the
 #   elevation prompt change (2.3.17.2) breaks NTLM auth mid-session:
 #   "ntlm: the specified credentials were rejected by the server". #79.
+#
+# win22cis_rule_18_9_19_4, win22cis_rule_18_9_19_5: false
+#   Security policy processing controls. 18.9.19.4 enables background
+#   security policy refresh, which immediately reprocesses all security
+#   settings (including NTLM/lockout changes applied earlier in the run)
+#   and kills the WinRM session: "Remote end closed connection without
+#   response". 18.9.19.5 forces reprocessing even when objects haven't
+#   changed — same effect. Both are safe on a deployed VM but fatal
+#   during a build. #79.
 
 hosted_virtual_system_override: false
 win_skip_for_test: true
@@ -45,4 +53,6 @@ win22cis_ngws_dc_gpo: false
 win22cis_ngws_ms_gpo: false
 win22cis_rule_2_3_17_1: false
 win22cis_rule_2_3_17_2: false
+win22cis_rule_18_9_19_4: false
+win22cis_rule_18_9_19_5: false
 skip_reboot: true
