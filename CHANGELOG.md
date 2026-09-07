@@ -25,6 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   automatically; WinRM reconnects on the next task. Eliminates the need to
   re-run the playbook when the tunnel drops.
 
+### Documentation
+- **CIS L1 image verified end-to-end (#84).** Updated `docs/design.md` §10.2 to
+  reflect that `win2k22-cis-l1-golden:20260907-0516` is published and consumed.
+  `win_ping` from AAP returned `ok: 1` against a clone provisioned from the CIS
+  image (`sales.demos` #270, #294). Removed stale "until PR 2" references.
+
 ### Changed
 - **Worktrees mandatory for code changes (#77).** Strengthened CLAUDE.md from
   defensive habits only to an unconditional worktree rule — the main checkout
