@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the connection). Not covered by the role's `win_skip_for_test`. Also added a
   `fail:` task in Play 3 so a lost WinRM connection fails the build instead of
   exiting 0.
+- **Edge AppX package blocks sysprep after CIS hardening (#79).** CIS
+  hardening installs or updates Microsoft Edge as a per-user AppX package.
+  Sysprep refuses to generalize with per-user packages not provisioned for all
+  users (`0x80073cf2`). Added an AppX cleanup step after CIS and before sysprep.
 
 ### Changed
 - **Worktrees mandatory for code changes (#77).** Strengthened CLAUDE.md from
