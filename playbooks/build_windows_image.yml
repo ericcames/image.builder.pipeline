@@ -1368,6 +1368,13 @@
       ansible.builtin.include_role:
         name: windows_2022_cis
 
+    - name: Remove per-user AppX packages that block sysprep
+      ansible.windows.win_powershell:
+        script: |
+          Get-AppxPackage | Remove-AppxPackage -ErrorAction SilentlyContinue
+          Get-AppxPackage -AllUsers | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+      failed_when: false
+
     - name: Record CIS success on localhost for Play 3
       ansible.builtin.set_fact:
         cis_applied: true
