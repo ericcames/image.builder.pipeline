@@ -1442,7 +1442,12 @@
       when: cis_applied | default(false)
 
     - name: Kill the port-forward wrapper and its child
-      ansible.builtin.shell: "kill -- -$(ps -o pgid= -p {{ port_forward_pid }} | tr -d ' ') 2>/dev/null || kill {{ port_forward_pid }} 2>/dev/null"
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          PGID=$(ps -o pgid= -p {{ port_forward_pid }} | tr -d ' ')
+          kill -- -"${PGID}" 2>/dev/null ||
+            kill {{ port_forward_pid }} 2>/dev/null
       changed_when: true
       failed_when: false
       when: port_forward_pid is defined
