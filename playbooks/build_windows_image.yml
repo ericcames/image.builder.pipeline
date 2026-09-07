@@ -69,11 +69,11 @@
 # win_skip_for_test skips 11 controls that would kill WinRM mid-run.
 # Verified 2026-09-06: 44 controls applied, idempotent on re-run.
 #
-# THE PORT-FORWARD CAN DIE. kubectl port-forward uses a WebSocket, and
-# connections exceeding ~15 minutes have dropped during testing. The CIS role
-# takes ~15 minutes. If it dies, the task fails with a WinRM connection
-# error — re-run the playbook; the role is idempotent and the completed
-# controls are preserved.
+# THE PORT-FORWARD USED TO DIE. kubectl port-forward uses a WebSocket that
+# OpenShift drops after ~15 minutes. The CIS role takes ~15 minutes. A
+# keepalive wrapper now restarts the port-forward automatically when it
+# drops; WinRM reconnects on the next task. The role is still idempotent
+# if anything else goes wrong.
 #
 # WHAT publish_windows_containerdisk.yml DOES is next: VirtualMachineExport,
 # containerdisk wrap, podman push to private quay. It expects a Stopped VM.
@@ -1223,18 +1223,27 @@
           changed_when: false
 
         - name: Start port-forward to the build VM's WinRM
-          # BACKGROUND PROCESS, cleaned up in Play 3. If the playbook dies
-          # before cleanup, `kill $(cat /tmp/ibp-pf.pid)` clears it.
+          # KEEPALIVE WRAPPER — restarts kubectl port-forward when the
+          # WebSocket drops (~15 min on OpenShift). WinRM reconnects on
+          # the next task automatically. The wrapper's PID is what Play 3
+          # kills; SIGTERM propagates to the child kubectl via trap.
           ansible.builtin.shell: |
-            nohup kubectl port-forward \
-              --kubeconfig={{ pf_kubeconfig.path }} \
-              -n {{ build_namespace }} \
-              svc/{{ build_vm_name }}-winrm \
-              {{ winrm_forward_port }}:{{ winrm_port }} \
-              >/dev/null 2>&1 &
-            PF_PID=$!
-            echo $PF_PID > /tmp/ibp-pf.pid
-            echo $PF_PID
+            nohup bash -c '
+              trap "kill \$PF_CHILD 2>/dev/null; exit" TERM INT
+              while true; do
+                kubectl port-forward \
+                  --kubeconfig={{ pf_kubeconfig.path }} \
+                  -n {{ build_namespace }} \
+                  svc/{{ build_vm_name }}-winrm \
+                  {{ winrm_forward_port }}:{{ winrm_port }} &
+                PF_CHILD=$!
+                wait $PF_CHILD
+                sleep 1
+              done
+            ' >/dev/null 2>&1 &
+            WRAPPER_PID=$!
+            echo $WRAPPER_PID > /tmp/ibp-pf.pid
+            echo $WRAPPER_PID
           register: pf_result
           changed_when: false
 
@@ -1432,8 +1441,8 @@
         - build_vm_final.resources[0].status.printableStatus | default('') in ['Stopped', 'Halted']
       when: cis_applied | default(false)
 
-    - name: Kill the port-forward process
-      ansible.builtin.command: "kill {{ port_forward_pid }}"
+    - name: Kill the port-forward wrapper and its child
+      ansible.builtin.shell: "kill -- -$(ps -o pgid= -p {{ port_forward_pid }} | tr -d ' ') 2>/dev/null || kill {{ port_forward_pid }} 2>/dev/null"
       changed_when: true
       failed_when: false
       when: port_forward_pid is defined
