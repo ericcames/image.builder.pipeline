@@ -1,0 +1,23 @@
+---
+sno_ocp_channel: stable-4.17
+sno_ocp_version: latest
+
+sno_openshift_install_url: >-
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ sno_ocp_version }}/openshift-install-linux.tar.gz
+
+sno_cluster_name: demo
+sno_base_domain: example.com
+
+sno_network_type: OVNKubernetes
+sno_service_network: 172.30.0.0/16
+sno_cluster_network: 10.128.0.0/14
+sno_cluster_network_host_prefix: 23
+
+sno_hardware_minimums:
+  ram_gb: 32
+  disk_gb: 120
+  cpus: 8
+
+sno_aap_channel: stable-2.7
+sno_cnv_channel: stable
+sno_compliance_operator_channel: stable

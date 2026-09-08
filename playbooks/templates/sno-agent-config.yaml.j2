@@ -1,0 +1,48 @@
+---
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: {{ sno_cluster_name }}
+rendezvousIP: {{ sno_node_ip | ansible.utils.ipaddr('address') }}
+hosts:
+  - hostname: {{ sno_hostname }}
+    role: master
+    rootDeviceHints:
+      deviceName: {{ sno_disk_device }}
+    interfaces:
+      - name: {{ sno_interface }}
+        macAddress: {{ sno_mac_address }}
+    networkConfig:
+{% if sno_use_dhcp | default(false) %}
+      interfaces:
+        - name: {{ sno_interface }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: true
+          ipv6:
+            enabled: false
+{% else %}
+      interfaces:
+        - name: {{ sno_interface }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ sno_node_ip | ansible.utils.ipaddr('address') }}
+                prefix-length: {{ sno_node_ip | ansible.utils.ipaddr('prefix') }}
+          ipv6:
+            enabled: false
+      dns-resolver:
+        config:
+          server:
+            - {{ sno_dns }}
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: {{ sno_gateway }}
+            next-hop-interface: {{ sno_interface }}
+{% endif %}

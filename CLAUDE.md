@@ -13,6 +13,7 @@ scans them with OpenSCAP, and produces structured compliance data.
 | [`sales.demos`](https://github.com/ericcames/sales.demos) | AMIs, via `data.aws_ami` tag-filter | `Pipeline` + `OS` + `CIS-Level` tags (§9) | Demo platform |
 | [`sales.demos`](https://github.com/ericcames/sales.demos) | RHEL 9 containerDisk on Quay.io | One string — a containerdisk tag (§10) | OpenShift Virt demos |
 | [`sales.demos`](https://github.com/ericcames/sales.demos) | Windows containerDisk on Quay.io | One string — a containerdisk tag (§10) | OpenShift Virt demos |
+| SEs / bare-metal demos | SNO installer kit on Quay.io | Kit image with manifests + `generate-iso.sh` (§11) | Bare-metal SNO with AAP + CNV + CIS L1 |
 
 If a change works for one consumer but breaks another, it doesn't ship.
 
@@ -85,6 +86,7 @@ the rules that came out of it, and each one is paid for.
 - Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. Monthly scheduled rebuild via GitHub Actions (`containerdisk-rebuild.yml`). See `docs/design.md` §10 for the containerDisk contract.
 - Phase 2 (CIS L2, RHEL 8) — not started
 - Phase 3 (Windows containerDisk) — **In progress.** Build and CIS L1 hardening done (`build_windows_image.yml`, #24). ISO re-master for no-keypress boot (#40), CIS hardening over WinRM (44 controls, verified 2026-09-06), and export/publish (`publish_windows_containerdisk.yml`) all shipped. Audit-tag evidence capture still pending. Consumer is `sales.demos#3`, already shipped.
+- Phase 5 (SNO installer kit) — **Scaffolding.** ABI ISO for bare-metal SNO with AAP 2.7, CNV, CIS L1. Playbook, templates, Day 0 manifests, `generate-iso.sh` laid down (#86). CIS MachineConfigs and Quay publishing pending.
 
 See `ROADMAP.md` for the full plan.
 
@@ -158,6 +160,12 @@ See `ROADMAP.md` for the full plan.
 | `.github/workflows/containerdisk-rebuild.yml` | Monthly scheduled RHEL 9 containerDisk rebuild + manual dispatch |
 | `inventories/sample/` | Template inventory; copy to `inventories/<customer>-<platform>/` |
 | `output/<platform>/` | Per-platform outputs: `build_output.json`, `scap/`, `data.json` |
+| `playbooks/build_sno_installer.yml` | SNO ABI ISO generation — download `openshift-install`, render templates, generate ISO |
+| `playbooks/templates/sno-install-config.yaml.j2` | SNO install-config template (1 master, 0 workers) |
+| `playbooks/templates/sno-agent-config.yaml.j2` | Bare metal agent config template (NIC, disk, static/DHCP) |
+| `playbooks/files/sno-manifests/` | Day 0 operator manifests (AAP, CNV, Compliance Operator, CIS L1 MachineConfigs) |
+| `playbooks/vars/sno_defaults.yml` | OCP version/channel, hardware minimums, operator channels |
+| `playbooks/scripts/generate-iso.sh` | User-facing ISO generation script (ships in the kit image) |
 
 ## Related repos
 

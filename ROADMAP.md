@@ -134,6 +134,42 @@ Platforms from `rego_policy_libraries` design doc, prioritized by demand:
 
 ---
 
+## Phase 5 — OpenShift SNO Installer Image ([#86](https://github.com/ericcames/image.builder.pipeline/issues/86))
+
+**Target:** Agent-Based Installer (ABI) ISO for bare-metal Single Node OpenShift,
+with AAP 2.7, OpenShift Virtualization, and CIS L1 node hardening baked in as
+Day 0 manifests. Published as a public installer kit on
+`quay.io/zigfreed/sno-installer-kit`, rebuilt monthly.
+
+This is the first **platform-level** image — an OpenShift installer, not a guest
+OS image. It doesn't conflict with the §9.3/§10.7 "OS-only" rule, which governs
+guest AMIs and containerDisks; an ABI ISO is a platform installer.
+
+**Key decisions:**
+
+| Decision | Choice | Why |
+|---|---|---|
+| Image type | ABI ISO (`openshift-install agent create image`) | Fully unattended bare-metal SNO from a USB drive |
+| Operators | AAP 2.7 + CNV + Compliance Operator as Day 0 manifests | Installed during bootstrap, no manual post-install steps |
+| CIS L1 | `ocp4-cis-node` MachineConfigs (Day 0) + Compliance Operator scan (Day 1) | Node-level hardening at first boot; scan verifies and reports gaps |
+| OCP version | Configurable, default latest stable channel | Tracks z-stream updates monthly |
+| Network | Static IP default, DHCP optional | DNS records break if the IP changes on reboot |
+| Distribution | Public kit image on Quay (manifests + templates + script); ISO generated locally with user's pull secret | Pull secret is a credential — cannot be in a public image |
+| First target | Intel NUC (64 GB RAM, 2 TB SSD, UEFI boot from USB) | Available hardware for initial validation |
+
+See `docs/design.md` §11 for the full design.
+
+| Task | Status |
+|------|--------|
+| Scaffolding (ROADMAP, design doc §11, directory structure) | Pending |
+| ABI ISO generation playbook + templates | Pending |
+| Day 0 operator manifests (AAP, CNV, Compliance Operator) | Pending |
+| CIS L1 MachineConfigs (extract from reference cluster) | Pending |
+| Quay kit image publishing + monthly rebuild workflow | Pending |
+| NUC validation + documentation | Pending |
+
+---
+
 ## Future Considerations
 
 - **Scheduled rebuilds (AMI pipeline)** — containerDisk monthly scheduling is proven and running (#48). Extend to AMI builds when ready. AAP workflow for builds requiring persistent infrastructure (AWS credentials, EC2 deploy).
