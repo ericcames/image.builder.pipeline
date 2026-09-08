@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **SNO Day 0 manifest errors found during NUC boot (#95).** Four issues
+  blocked or delayed the first ABI ISO bootstrap: (1) AAP subscription used
+  package name `aap-operator` instead of `ansible-automation-platform-operator`,
+  (2) CNV was missing a Namespace manifest — `openshift-cnv` does not exist by
+  default, (3) CNV was missing an OperatorGroup manifest, (4) the
+  `ScanSettingBinding` cannot be a Day 0 manifest because the Compliance
+  Operator CRD does not exist during bootstrap, causing bootkube to retry
+  indefinitely and block the pivot. Fixed by correcting the package name,
+  adding CNV namespace and operatorgroup manifests, and moving the
+  ScanSettingBinding to Day 1 documentation.
 - **The #92 gate looked for a control where it cannot exist (#93).**
   `verify_cis_disk.py` checked `DisableWebPnPDownload` at
   `\Policies\Microsoft\Windows`; the CIS role writes it to

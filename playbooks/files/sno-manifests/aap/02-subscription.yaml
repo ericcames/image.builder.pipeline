@@ -7,6 +7,6 @@ metadata:
 spec:
   channel: stable-2.7
   installPlanApproval: Automatic
-  name: aap-operator
+  name: ansible-automation-platform-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
