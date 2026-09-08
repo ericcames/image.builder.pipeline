@@ -43,7 +43,7 @@ USAGE
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KIT_DIR="${SCRIPT_DIR}/.."
+KIT_DIR="${SCRIPT_DIR}/../.."
 
 CLUSTER_NAME="edge"
 BASE_DOMAIN="internal.ames.net"
@@ -102,21 +102,36 @@ if ! command -v ansible-playbook &>/dev/null; then
   exit 1
 fi
 
-PULL_SECRET_CONTENT="$(cat "$PULL_SECRET")"
+if [[ -z "${MACHINE_NETWORK:-}" ]]; then
+  MACHINE_NETWORK="$(python3 -c "import ipaddress,sys; n=ipaddress.ip_interface(sys.argv[1]).network; print(n)" "$NODE_IP")"
+fi
+
 SSH_KEY_CONTENT="$(cat "$SSH_KEY")"
 
-EXTRA_VARS=(
-  -e "sno_cluster_name=${CLUSTER_NAME}"
-  -e "sno_base_domain=${BASE_DOMAIN}"
-  -e "sno_hostname=${HOSTNAME_VAL}"
-  -e "sno_node_ip=${NODE_IP}"
-  -e "sno_interface=${INTERFACE}"
-  -e "sno_disk_device=${DISK}"
-  -e "sno_mac_address=${MAC}"
-  -e "sno_use_dhcp=${USE_DHCP}"
-  -e "sno_pull_secret=${PULL_SECRET_CONTENT}"
-  -e "sno_ssh_key=${SSH_KEY_CONTENT}"
-)
+VARS_FILE="$(mktemp /tmp/sno-vars-XXXXXX.json)"
+trap 'rm -f "$VARS_FILE"' EXIT
+
+python3 -c "
+import json, sys
+ps = open(sys.argv[1]).read().strip()
+print(json.dumps({
+    'sno_cluster_name': sys.argv[2],
+    'sno_base_domain': sys.argv[3],
+    'sno_hostname': sys.argv[4],
+    'sno_node_ip': sys.argv[5],
+    'sno_interface': sys.argv[6],
+    'sno_disk_device': sys.argv[7],
+    'sno_mac_address': sys.argv[8],
+    'sno_use_dhcp': sys.argv[9] == 'true',
+    'sno_pull_secret': ps,
+    'sno_ssh_key': sys.argv[10],
+}))
+" "$PULL_SECRET" "$CLUSTER_NAME" "$BASE_DOMAIN" "$HOSTNAME_VAL" \
+  "$NODE_IP" "$INTERFACE" "$DISK" "$MAC" "$USE_DHCP" \
+  "$SSH_KEY_CONTENT" > "$VARS_FILE"
+chmod 600 "$VARS_FILE"
+
+EXTRA_VARS=(-e "@${VARS_FILE}")
 
 if [[ -n "${GATEWAY:-}" ]]; then
   EXTRA_VARS+=(-e "sno_gateway=${GATEWAY}")
