@@ -770,12 +770,13 @@ workdir/
     00-aap-namespace.yaml
     01-aap-operatorgroup.yaml
     02-aap-subscription.yaml
-    10-cnv-subscription.yaml
+    10-cnv-namespace.yaml
+    11-cnv-operatorgroup.yaml
+    12-cnv-subscription.yaml
     20-compliance-namespace.yaml
     21-compliance-operatorgroup.yaml
     22-compliance-subscription.yaml
     50-cis-l1-machineconfig-*.yaml
-    99-scansettingbinding.yaml
 ```
 
 ### 11.4 Kit OCI labels
@@ -802,8 +803,29 @@ Covers: kernel sysctl params, audit rules, file permissions, mount options,
 SSH hardening.
 
 **Day 1 — Compliance Operator scan.** The operator installs via its Day 0
-subscription. A `ScanSettingBinding` for `ocp4-cis-node` triggers a scan once
-the cluster is ready, generates a compliance report, and surfaces any gaps.
+subscription. Once the cluster is fully up and the Compliance Operator CRD is
+registered, apply the `ScanSettingBinding` for `ocp4-cis-node` to trigger a
+scan. This **cannot** be a Day 0 manifest — the CRD does not exist during
+bootstrap, and bootkube retries the manifest indefinitely, blocking the pivot
+to the real control plane (#95).
+
+```bash
+oc apply -f - <<'EOF'
+apiVersion: compliance.openshift.io/v1alpha1
+kind: ScanSettingBinding
+metadata:
+  name: cis-node-l1
+  namespace: openshift-compliance
+profiles:
+  - name: ocp4-cis-node
+    kind: Profile
+    apiGroup: compliance.openshift.io/v1alpha1
+settingsRef:
+  name: default
+  kind: ScanSetting
+  apiGroup: compliance.openshift.io/v1alpha1
+EOF
+```
 
 **Reference process to generate Day 0 MachineConfigs:**
 1. Deploy a stock SNO (or use an existing RHDP cluster)
@@ -831,3 +853,49 @@ Manual trigger via `workflow_dispatch`.
 
 Secrets: `QUAY_USERNAME` and `QUAY_PASSWORD` (shared with the containerDisk
 rebuild workflow).
+
+### 11.8 Home-lab DNS — dnsmasq alongside systemd-resolved
+
+Consumer routers typically do not support custom DNS A records or wildcards.
+SNO requires both `api.<cluster>.<domain>` and `*.apps.<cluster>.<domain>` to
+resolve to the node's IP. On a Fedora laptop with NetworkManager +
+systemd-resolved, run dnsmasq as a local forwarding resolver for the cluster's
+domain.
+
+**Setup:**
+
+```bash
+# dnsmasq config — one address= line covers api.* and *.apps.*
+sudo tee /etc/dnsmasq.d/sno.conf <<'EOF'
+address=/<cluster>.<domain>/<node-ip>
+listen-address=127.0.0.2
+bind-interfaces
+server=<router-ip>
+EOF
+
+# Tell systemd-resolved to route the domain to dnsmasq
+sudo mkdir -p /etc/systemd/resolved.conf.d
+sudo tee /etc/systemd/resolved.conf.d/sno.conf <<'EOF'
+[Resolve]
+DNS=127.0.0.2
+Domains=~<domain>
+EOF
+
+sudo systemctl start dnsmasq
+sudo systemctl restart systemd-resolved
+```
+
+**Verify:**
+
+```bash
+dig +short api.<cluster>.<domain>            # → <node-ip>
+dig +short console.apps.<cluster>.<domain>   # → <node-ip>
+```
+
+**Cleanup** (when the node is decommissioned or moved to real DNS):
+
+```bash
+sudo rm /etc/dnsmasq.d/sno.conf /etc/systemd/resolved.conf.d/sno.conf
+sudo systemctl stop dnsmasq
+sudo systemctl restart systemd-resolved
+```
