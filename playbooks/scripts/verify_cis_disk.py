@@ -61,7 +61,13 @@ CONTROLS = [
     ("SOFTWARE", r"\Policies\Microsoft\WindowsFirewall\PublicProfile", "EnableFirewall", 1),
     ("SOFTWARE", r"\Policies\Microsoft\WindowsFirewall\PublicProfile", "DefaultInboundAction", 1),
     ("SOFTWARE", r"\Microsoft\Windows\CurrentVersion\Policies\System", "DontDisplayLastUserName", 1),
-    ("SOFTWARE", r"\Policies\Microsoft\Windows", "DisableWebPnPDownload", 1),
+    # \Windows NT\Printers, not \Windows (#93). The role writes
+    # `HKLM:\SOFTWARE\Policies\Microsoft\Windows Nt\Printers`
+    # (section18.yml, rule 18.9.20.1.1); the stock key is spelled `Windows NT`.
+    # The old path could not hold this value on ANY machine, and that was
+    # invisible for as long as the only disk ever measured was unhardened --
+    # where the honest answer and the bug are both "VALUE ABSENT".
+    ("SOFTWARE", r"\Policies\Microsoft\Windows NT\Printers", "DisableWebPnPDownload", 1),
     ("SYSTEM", r"\Control\Lsa", "SCENoApplyLegacyAuditPolicy", 1),
     ("SYSTEM", r"\Services\LanmanWorkstation\Parameters", "RequireSecuritySignature", 1),
     ("SYSTEM", r"\Services\LanmanServer\Parameters", "RequireSecuritySignature", 1),
@@ -163,6 +169,35 @@ def provenance(vol):
     return info
 
 
+def get_key_ci(hive, path):
+    """Resolve a key path case-insensitively.
+
+    The registry is case-insensitive and the CIS role is inconsistent about it
+    -- `Windows Nt` in `win_regedit`, `Windows NT` in the GPO task, and the
+    stock key is `Windows NT`. A checker stricter than the thing it checks would
+    report "not hardened" for a disk that is, which is the worst direction for
+    this tool to be wrong in.
+
+    MEASURED, not assumed: regipy's own `get_key` already resolves
+    case-insensitively, so this is belt-and-braces rather than load-bearing. It
+    is kept because that behaviour is undocumented, and because #93 was a path
+    bug that silently read as "not hardened" -- the same direction of error.
+    """
+    try:
+        return hive.get_key(path)
+    except Exception:
+        pass
+    node = hive.get_key("\\")
+    for want in [seg for seg in path.split("\\") if seg]:
+        match = next((k for k in node.iter_subkeys()
+                      if k.header.key_name_string.decode(errors="replace").lower() == want.lower()),
+                     None)
+        if match is None:
+            raise KeyError(path)
+        node = hive.get_key(match.path if hasattr(match, "path") else want)
+    return node
+
+
 def check(workdir):
     try:
         from regipy.registry import RegistryHive
@@ -185,7 +220,7 @@ def check(workdir):
         full = (cs + path) if hive_name == "SYSTEM" else path
         found, state = None, "KEY ABSENT"
         try:
-            key = hives[hive_name].get_key(full)
+            key = get_key_ci(hives[hive_name], full)
         except Exception:
             key = None
         if key is not None:

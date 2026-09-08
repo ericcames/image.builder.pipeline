@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The #92 gate looked for a control where it cannot exist (#93).**
+  `verify_cis_disk.py` checked `DisableWebPnPDownload` at
+  `\Policies\Microsoft\Windows`; the CIS role writes it to
+  `HKLM:\SOFTWARE\Policies\Microsoft\Windows Nt\Printers` (rule 18.9.20.1.1,
+  `level1-memberserver`, enabled). The path omitted both `Nt` and `\Printers`,
+  so the value could not be found on any machine. **It was invisible because the
+  only disk ever measured was unhardened**, where the honest answer and the bug
+  are both `VALUE ABSENT` — the same failure shape as #91 one level up, with the
+  *checker* validated against an artifact that could not tell a pass from a bug.
+  Caught the first time genuinely hardened media was read, which returned 9 of 10.
+  Key paths now also resolve case-insensitively; regipy already does this, so it
+  is belt-and-braces against an undocumented behaviour, not load-bearing. The
+  same defect is fixed in `sales.demos` #370, which this reader was ported from.
+
 ### Added
 - **The Windows CIS level is now measured, not declared (#91).**
   `playbooks/scripts/verify_cis_disk.py` reads the `SOFTWARE` and `SYSTEM` hives
