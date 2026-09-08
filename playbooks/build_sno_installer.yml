@@ -108,6 +108,7 @@
         cmd: >-
           {{ openshift_install_bin }} agent create image
           --dir {{ workdir.path }}
+      changed_when: true
       register: iso_result
 
     - name: Display ISO location
