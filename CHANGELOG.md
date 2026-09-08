@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **The Windows CIS level is now measured, not declared (#91).**
+  `playbooks/scripts/verify_cis_disk.py` reads the `SOFTWARE` and `SYSTEM` hives
+  out of the qcow2 a publish is about to package — `qemu-img`, `ntfscat` and
+  `regipy`, with no root, no libguestfs, no cluster and no booting the guest —
+  and checks ten CIS controls that cannot be set on a clean install, so a pass
+  cannot be a Windows default in disguise. `publish_windows_containerdisk.yml`
+  refuses to apply `com.redhat.cis.level=L1` unless the disk supports it, and
+  fails equally when the check cannot reach a verdict, because "unverified" is
+  the state that let #91 ship. A preflight check fails in a second if `regipy`
+  is missing rather than forty minutes into the download. The verdict lands in
+  `cis_verify.json` and in `publish_output.json` beside the level being claimed;
+  the script also reports the disk's sysprep count and dates, which is how #91
+  was caught. Ported from `sales.demos` `utilities/inspect-golden-image.py`.
+  `-e cis_level=none` publishes unhardened media ungated and says so out loud.
 - **Phase 5: OpenShift SNO installer kit (#86).** Agent-Based Installer ISO
   pipeline for bare-metal Single Node OpenShift with AAP 2.7, OpenShift
   Virtualization, Compliance Operator, and CIS L1 node hardening as Day 0
@@ -16,6 +30,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `sno_defaults.yml`, ROADMAP Phase 5, and `docs/design.md` §11.
 
 ### Fixed
+- **A publish repackaged a previous run's disk, and labelled it CIS L1 (#91).**
+  `publish_windows_containerdisk.yml` guarded the qcow2 conversion with
+  `creates: disk.qcow2` while its cleanup deleted only `disk.img.gz` and
+  `disk.raw` — so a qcow2 survived between runs and the next publish skipped the
+  conversion and packaged the stale disk. `win2k22-cis-l1-golden:20260907-0516`
+  is the 2026-09-05 unhardened build, byte-identical to
+  `win2k22-golden:20260905-2217` at 9307619328 bytes, and the demo guest built
+  from it scored 9 of 27 CIS controls (`sales.demos#358`). Both `creates:`
+  guards are gone, intermediates are purged before the run starts, `disk.qcow2`
+  and the verification scratch are removed in the `always:` block as
+  `build_cis_containerdisk.yml` has always done, and the packaged qcow2 is
+  asserted to be newer than the run that packaged it. The cluster was never at
+  fault — the export selected the correct, freshly built PVC.
 - **CIS controls that break WinRM mid-hardening (#79).** Disabled four controls
   in `cis_profile.yml` that kill the WinRM session during the build:
   `win22cis_rule_2_3_17_1` and `_2` (UAC Admin Approval Mode — NTLM credentials
@@ -35,6 +62,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   re-run the playbook when the tunnel drops.
 
 ### Documentation
+- **How the Windows CIS claim is evidenced (#91).** `docs/design.md` §10.2 now
+  states that `com.redhat.cis.level` is an observation of the disk rather than
+  an input to the publish, and §10.5 splits compliance evidence by OS. The
+  section previously deferred per-format scanning on the grounds that "the same
+  profile applied to the same distribution produces the same compliance posture
+  regardless of output format" — true for RHEL, where Image Builder runs
+  OpenSCAP, and false for Windows, which has no compose and no scan and was
+  taking the operator's intent as evidence.
 - **CIS L1 image verified end-to-end (#84).** Updated `docs/design.md` §10.2 to
   reflect that `win2k22-cis-l1-golden:20260907-0516` is published and consumed.
   `win_ping` from AAP returned `ok: 1` against a clone provisioned from the CIS

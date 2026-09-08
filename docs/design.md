@@ -406,6 +406,20 @@ whoever is about to demo:
 reads as an oversight; `none` on an unhardened image and `L1` on a hardened one
 are both claims, and they are the true ones.
 
+**And since #91 it is an observation of the disk, not an input to the publish.**
+It used to be neither: `publish_windows_containerdisk.yml` defaulted to
+`cis_level=L1` and the `win2k22-cis-l1-golden` repository, so the label recorded
+what the operator intended and nothing read the media back. That shipped —
+`win2k22-cis-l1-golden:20260907-0516` carries a 2026-09-05 disk with no
+hardening on it at all, byte-identical to the deliberately unhardened
+`win2k22-golden:20260905-2217`, and a consumer demo built from it scored 9 of 27
+CIS controls in front of the talk track that invites customers to read the
+report (`sales.demos#358`).
+
+A Windows publish now reads the SOFTWARE and SYSTEM hives out of the very qcow2
+it is about to package and refuses to apply an `L1` label the disk does not
+support. See §10.5.
+
 ### 10.2.1 Getting the disk out — Windows only
 
 RHEL images arrive as a qcow2 from Image Builder's `guest-image` type. Windows is
@@ -639,15 +653,52 @@ No AWS credentials are required for the containerDisk path.
 
 ### 10.5 Compliance evidence
 
-The containerDisk is built from the same Image Builder compose with the same CIS
-L1 profile and package customizations as the AMI. Image Builder runs OpenSCAP at
-build time regardless of output format. The AMI pipeline independently validates
-compliance (98.07 / 95 gate).
+**RHEL and Windows get their evidence from different places, and conflating them
+is what caused #91.**
 
-Per-format scanning (booting the qcow2 or extracting embedded results via
-`libguestfs`) is deferred as a future enhancement. Same profile applied to the
-same distribution produces the same compliance posture regardless of output
-format.
+**RHEL 9.** The containerDisk is built from the same Image Builder compose with
+the same CIS L1 profile and package customizations as the AMI. Image Builder runs
+OpenSCAP at build time regardless of output format, and the AMI pipeline
+independently validates compliance (98.07 / 95 gate). Per-format scanning is
+still deferred here: the same profile applied to the same distribution produces
+the same compliance posture regardless of output format.
+
+**Windows 2022 — that argument does not transfer, and #91 is the proof.** There
+is no Image Builder compose and no OpenSCAP in the Windows path. The disk is
+built by running Setup on the cluster (§10.2.1) and hardened over WinRM
+afterwards, so the only evidence that hardening happened was that the playbook
+had been asked to do it. When a publish packaged a stale disk, every task
+reported success and the label said `L1`.
+
+So the Windows publish measures the artifact:
+
+`playbooks/scripts/verify_cis_disk.py` reads the `SOFTWARE` and `SYSTEM` hives
+out of the qcow2 that is about to be packaged — `qemu-img` to raw, carve the
+Windows volume, `ntfscat` the hives, `regipy` to read them. No root, no
+libguestfs, no cluster, no booting the guest. It checks ten controls chosen
+because they **cannot be set on a clean install**, so a pass cannot be a Windows
+default in disguise. That last point is not incidental: #358's first evidence was
+ambiguous for two days precisely because nine "compliant" readings were stock
+values.
+
+`publish_windows_containerdisk.yml` fails rather than labelling if the check
+reports missing controls, and **also if it cannot reach a verdict** — "could not
+check" is the state that let #91 through, so it is not allowed to resemble a
+pass. The verdict is written to `output/win2k22-containerdisk/cis_verify.json`
+and recorded in `publish_output.json` next to the level being claimed.
+
+It also reports how many sysprep runs the disk records and when. That is
+provenance rather than compliance and never fails the run on its own, but it is
+what caught #91: exactly one run, two days before the tag it was published under.
+
+Measured at 37 seconds on the real 9.3 GiB artifact, needing about 18 GiB of
+scratch — cheap enough to gate every publish, which is why `required_free_gib`
+went from 40 to 55.
+
+**The unhardened path is not gated, and says so.** `-e cis_level=none` publishes
+to `win2k22-golden` with no check and prints a line stating that. A legitimate
+unhardened publish must not be able to look like a hardened one that quietly
+skipped its check.
 
 ### 10.6 Scheduled rebuilds
 

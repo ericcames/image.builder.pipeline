@@ -70,8 +70,18 @@
     # "No space left on device" twelve minutes into a download that has already
     # succeeded.
     output_dir: "{{ playbook_dir }}/../output/win2k22-containerdisk"
-    required_free_gib: 40
+    # 55 not 40 since #91: the CIS verification needs its own working copy of
+    # the disk. Measured on the real artifact — the qcow2 is 9.3 GiB and the
+    # verification scratch (a sparse raw plus the carved NTFS volume) is 18 GiB,
+    # so the peak is about 28 GiB and this leaves headroom.
+    required_free_gib: 55
     containerdisk_push: false
+
+    # THE HARDENING IS VERIFIED, NOT DECLARED (#91). cis_verify_python must be
+    # an interpreter with regipy importable; the preflight below checks it
+    # rather than letting the run discover it forty minutes in.
+    cis_verify_python: "python3"
+    cis_verify_dir: "{{ output_dir }}/cis-verify"
 
     # THE 180-DAY CLOCK HAS TO TRAVEL WITH THE ARTIFACT. A namespace label on a
     # cluster that no longer exists helps nobody; a label on the published image
@@ -126,6 +136,30 @@
       ansible.builtin.command: podman --version
       register: podman_check
       changed_when: false
+
+    - name: Check the CIS verifier's dependencies are importable
+      # BEFORE THE DOWNLOAD, following the free-space assert below: this repo's
+      # rule is that a check fails in a second rather than twelve minutes in,
+      # and the verification cannot be skipped on a hardened publish, so a
+      # missing regipy has to surface now.
+      ansible.builtin.command: "{{ cis_verify_python }} -c 'import regipy'"
+      register: regipy_check
+      changed_when: false
+      failed_when: false
+      when: cis_level != 'none'
+
+    - name: Assert the CIS verifier can run
+      ansible.builtin.assert:
+        that:
+          - regipy_check.rc == 0
+        fail_msg: >-
+          {{ cis_verify_python }} cannot import regipy, so the disk cannot be
+          verified — and an unverified disk is exactly how #91 published an
+          unhardened image under a CIS L1 label. Install it
+          (`pip install regipy`) or point -e cis_verify_python=<interpreter> at
+          one that has it. To publish deliberately unhardened media, pass
+          -e cis_level=none and the win2k22-golden repository.
+      when: cis_level != 'none'
 
     - name: Assert we are logged in to the registry
       # Asserted rather than scripted, exactly as build_cis_containerdisk.yml
@@ -186,12 +220,35 @@
       ansible.builtin.set_fact:
         build_date_iso: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
         build_date_short: "{{ lookup('pipe', 'date -u +%Y%m%d-%H%M') }}"
+        run_started_epoch: "{{ lookup('pipe', 'date -u +%s') }}"
 
     - name: Create the output directory
       ansible.builtin.file:
         path: "{{ output_dir }}"
         state: directory
         mode: "0755"
+
+    - name: Purge any intermediates left by a previous run
+      # THIS IS THE #91 FIX. The convert task used to be guarded by
+      # `creates: disk.qcow2`, and the always: block deleted only disk.img.gz
+      # and disk.raw — so a qcow2 survived between runs and the next publish
+      # SKIPPED the conversion and packaged the stale disk. That shipped:
+      # win2k22-cis-l1-golden:20260907-0516 contains the 2026-09-05 unhardened
+      # disk, byte-identical to win2k22-golden:20260905-2217 at 9307619328
+      # bytes, and the demo guest built from it scored 9 of 27 CIS controls
+      # (sales.demos#358).
+      #
+      # `creates:` asks whether the output EXISTS, never whether it is CURRENT.
+      # build_cis_containerdisk.yml never had this defect because it deletes
+      # the qcow2 when it finishes; this brings Windows in line with it.
+      ansible.builtin.file:
+        path: "{{ output_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - disk.img.gz
+        - disk.raw
+        - disk.qcow2
+        - cis-verify
 
     - name: Measure the free space where the disk images will land
       ansible.builtin.command:
@@ -214,7 +271,8 @@
           {{ output_dir }} has
           {{ ((free_space.stdout_lines[1] | trim | int) / 1073741824) | round(1) }} GiB
           free and this needs about {{ required_free_gib }} GiB — a compressed
-          download, a sparse raw expansion and a qcow2. Pass
+          download, a sparse raw expansion, a qcow2, and the CIS
+          verification's own working copy of the disk. Pass
           -e output_dir=/somewhere/roomier, or lower required_free_gib if you
           know the disk is small.
 
@@ -327,7 +385,6 @@
               set -o pipefail &&
               gunzip -c '{{ output_dir }}/disk.img.gz'
               | dd of='{{ output_dir }}/disk.raw' conv=sparse bs=4M status=none
-            creates: "{{ output_dir }}/disk.raw"
           changed_when: true
 
         - name: Remove the compressed download
@@ -352,7 +409,10 @@
               - qcow2
               - "{{ output_dir }}/disk.raw"
               - "{{ output_dir }}/disk.qcow2"
-            creates: "{{ output_dir }}/disk.qcow2"
+          # Always runs since #91 removed the `creates:` guard — the guard was
+          # the defect, because it let a previous run's qcow2 stand in for this
+          # one's.
+          changed_when: true
 
         - name: Remove the expanded raw disk
           ansible.builtin.file:
@@ -363,6 +423,79 @@
           ansible.builtin.stat:
             path: "{{ output_dir }}/disk.qcow2"
           register: qcow2_stat
+
+        - name: Assert the qcow2 was produced by THIS run
+          # Belt and braces over the purge above. If the purge ever silently
+          # fails, this catches the same defect one stage later rather than
+          # letting a stale disk reach the registry. #91's disk would have
+          # tripped this by two days.
+          ansible.builtin.assert:
+            that:
+              - qcow2_stat.stat.exists
+              - (qcow2_stat.stat.mtime | int) >= (run_started_epoch | int)
+            fail_msg: >-
+              {{ output_dir }}/disk.qcow2 is older than this run
+              (mtime {{ qcow2_stat.stat.mtime | default('missing') }},
+              run started {{ run_started_epoch }}). It is a previous run's
+              disk, which is #91 exactly — refusing to package it.
+
+        - name: Read the CIS hardening off the disk about to be published
+          # THE LABEL IS NOW AN OBSERVATION, NOT AN INPUT (#91). This reads the
+          # SOFTWARE and SYSTEM hives out of the very qcow2 that podman is
+          # about to COPY, and checks ten controls that CANNOT be set on a
+          # clean install — so a pass cannot be a Windows default in disguise.
+          #
+          # It measures the packaged artifact, not the exported PVC or the
+          # build's own report, because every one of those said "success" while
+          # #91 shipped. Measured at 37 seconds on the real 9.3 GiB disk.
+          ansible.builtin.command:
+            argv:
+              - "{{ cis_verify_python }}"
+              - "{{ playbook_dir }}/scripts/verify_cis_disk.py"
+              - --disk
+              - "{{ output_dir }}/disk.qcow2"
+              - --workdir
+              - "{{ cis_verify_dir }}"
+              - --json
+              - "{{ output_dir }}/cis_verify.json"
+          register: cis_verify
+          changed_when: false
+          failed_when: false
+          when: cis_level != 'none'
+
+        - name: Show what the disk actually contains
+          ansible.builtin.debug:
+            msg: "{{ cis_verify.stdout_lines }}"
+          when: cis_level != 'none'
+
+        - name: Refuse to label a disk that does not carry the hardening
+          # rc 2 is "could not check", and it fails too. "Unverified" is the
+          # state that let #91 through, so it is not allowed to look like a
+          # pass.
+          ansible.builtin.assert:
+            that:
+              - cis_verify.rc == 0
+            fail_msg: >-
+              The disk does NOT carry the CIS hardening that
+              com.redhat.cis.level={{ cis_level }} would claim
+              {{ '(the check could not reach a verdict)' if cis_verify.rc == 2
+                 else '' }}. Nothing has been pushed. The image is not built.
+              Read {{ output_dir }}/cis_verify.json, then rebuild with
+              playbooks/build_windows_image.yml — or publish it honestly as
+              unhardened media with
+              -e cis_level=none QUAY_WINDOWS_REPO=quay.io/zigfreed/win2k22-golden.
+              See #91 and sales.demos#358.
+          when: cis_level != 'none'
+
+        - name: Note that an unhardened publish was not gated
+          # Deliberate and legitimate — win2k22-golden exists for it — but it
+          # should never be silent, because "no CIS output in the recap" must
+          # not be something a hardened publish can also look like.
+          ansible.builtin.debug:
+            msg: >-
+              cis_level=none: publishing WITHOUT a hardening check, to
+              {{ quay_repo }}. The image will carry no CIS level label claim.
+          when: cis_level == 'none'
 
         - name: Write Containerfile
           ansible.builtin.copy:
@@ -474,6 +607,15 @@
               qcow2_bytes: "{{ qcow2_stat.stat.size | default(0) }}"
               pushed: "{{ containerdisk_push | bool }}"
               build_date: "{{ build_date_iso }}"
+              # WHAT THE DISK MEASURED, next to what the label claims. #91's
+              # record showed cis_level L1 and nothing to contradict it.
+              cis_verified: "{{ (cis_verify.rc | default(1)) == 0 if cis_level != 'none' else false }}"
+              cis_verify_report: "{{ output_dir }}/cis_verify.json"
+
+        - name: Read back the verification verdict for the summary
+          ansible.builtin.set_fact:
+            cis_verify_json: "{{ lookup('ansible.builtin.file', output_dir ~ '/cis_verify.json') | from_json }}"
+          when: cis_level != 'none'
 
         - name: Show the result
           ansible.builtin.debug:
@@ -484,7 +626,12 @@
                 — {{ quay_repo }}:{{ build_date_short }}
               - "qcow2:          {{ (qcow2_stat.stat.size | default(0) | int / 1073741824) | round(2) }} GiB"
               - "EVAL EXPIRES:   {{ windows_eval_expires }} — stamped on the image as image-factory/eval-expires"
-              - "CIS level:      {{ cis_level }}"
+              - >-
+                CIS level:      {{ cis_level }}{{
+                  ' — VERIFIED on the disk, ' ~ (cis_verify_json.controls_present | default('?'))
+                  ~ ' of ' ~ (cis_verify_json.controls_total | default('?'))
+                  ~ ' non-default controls present'
+                  if cis_level != 'none' else ' — not gated, unhardened media' }}
               - "Record:         {{ output_dir }}/publish_output.json"
               - >-
                 {{ 'Consumer: set quay_windows_image in sales.demos to the tag above.'
@@ -512,3 +659,8 @@
           loop:
             - disk.img.gz
             - disk.raw
+            # disk.qcow2 since #91: leaving it is what let the next run
+            # package it. build_cis_containerdisk.yml has always removed its
+            # own; this matches. It is inside the built image by now.
+            - disk.qcow2
+            - cis-verify
