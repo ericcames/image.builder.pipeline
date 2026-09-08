@@ -1,0 +1,122 @@
+---
+- name: Build SNO installer kit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/sno_defaults.yml
+
+  pre_tasks:
+    - name: Assert required variables
+      ansible.builtin.assert:
+        that:
+          - sno_cluster_name is defined
+          - sno_base_domain is defined
+          - sno_hostname is defined
+          - sno_node_ip is defined
+          - sno_interface is defined
+          - sno_disk_device is defined
+          - sno_mac_address is defined
+          - sno_pull_secret is defined
+          - sno_ssh_key is defined
+          - sno_machine_network is defined
+        fail_msg: >-
+          Missing required variable. Provide via extra vars:
+          sno_cluster_name, sno_base_domain, sno_hostname, sno_node_ip,
+          sno_interface, sno_disk_device, sno_mac_address,
+          sno_pull_secret, sno_ssh_key, sno_machine_network
+
+    - name: Assert network variables for static IP
+      when: not (sno_use_dhcp | default(false))
+      ansible.builtin.assert:
+        that:
+          - sno_gateway is defined
+          - sno_dns is defined
+        fail_msg: >-
+          Static IP requires sno_gateway and sno_dns.
+          Pass -e sno_use_dhcp=true for DHCP.
+
+  tasks:
+    - name: Create work directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: sno-installer-
+      register: workdir
+
+    - name: Render install-config.yaml
+      ansible.builtin.template:
+        src: templates/sno-install-config.yaml.j2
+        dest: "{{ workdir.path }}/install-config.yaml"
+        mode: "0600"
+
+    - name: Render agent-config.yaml
+      ansible.builtin.template:
+        src: templates/sno-agent-config.yaml.j2
+        dest: "{{ workdir.path }}/agent-config.yaml"
+        mode: "0644"
+
+    - name: Create openshift manifests directory
+      ansible.builtin.file:
+        path: "{{ workdir.path }}/openshift"
+        state: directory
+        mode: "0755"
+
+    - name: Copy Day 0 manifests
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ workdir.path }}/openshift/"
+        mode: "0644"
+      with_fileglob:
+        - files/sno-manifests/aap/*.yaml
+        - files/sno-manifests/cnv/*.yaml
+        - files/sno-manifests/compliance-operator/*.yaml
+        - files/sno-manifests/cis-l1/*.yaml
+
+    - name: Download openshift-install
+      when: sno_download_installer | default(true)
+      block:
+        - name: Create bin directory
+          ansible.builtin.file:
+            path: "{{ workdir.path }}/bin"
+            state: directory
+            mode: "0755"
+
+        - name: Fetch openshift-install binary
+          ansible.builtin.get_url:
+            url: "{{ sno_openshift_install_url }}"
+            dest: "{{ workdir.path }}/bin/openshift-install.tar.gz"
+            mode: "0644"
+
+        - name: Extract openshift-install
+          ansible.builtin.unarchive:
+            src: "{{ workdir.path }}/bin/openshift-install.tar.gz"
+            dest: "{{ workdir.path }}/bin/"
+            remote_src: true
+
+        - name: Set openshift_install_bin
+          ansible.builtin.set_fact:
+            openshift_install_bin: "{{ workdir.path }}/bin/openshift-install"
+
+    - name: Use system openshift-install
+      when: not (sno_download_installer | default(true))
+      ansible.builtin.set_fact:
+        openshift_install_bin: openshift-install
+
+    - name: Generate agent ISO
+      ansible.builtin.command:
+        cmd: >-
+          {{ openshift_install_bin }} agent create image
+          --dir {{ workdir.path }}
+      changed_when: true
+      register: iso_result
+
+    - name: Display ISO location
+      ansible.builtin.debug:
+        msg: >-
+          ISO generated at {{ workdir.path }}/agent.x86_64.iso
+          ({{ iso_result.stdout_lines | default([]) | length }} lines of output)
+
+    - name: Display work directory
+      ansible.builtin.debug:
+        msg: "Work directory: {{ workdir.path }}"

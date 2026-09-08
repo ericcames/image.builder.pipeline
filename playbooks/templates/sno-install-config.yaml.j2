@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+metadata:
+  name: {{ sno_cluster_name }}
+baseDomain: {{ sno_base_domain }}
+
+compute:
+  - architecture: amd64
+    hyperthreading: Enabled
+    name: worker
+    replicas: 0
+
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  replicas: 1
+
+networking:
+  clusterNetwork:
+    - cidr: {{ sno_cluster_network }}
+      hostPrefix: {{ sno_cluster_network_host_prefix }}
+  machineNetwork:
+    - cidr: {{ sno_machine_network }}
+  networkType: {{ sno_network_type }}
+  serviceNetwork:
+    - {{ sno_service_network }}
+
+platform:
+  none: {}
+
+pullSecret: '{{ sno_pull_secret }}'
+sshKey: '{{ sno_ssh_key }}'

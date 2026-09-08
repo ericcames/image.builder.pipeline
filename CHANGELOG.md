@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Phase 5: OpenShift SNO installer kit (#86).** Agent-Based Installer ISO
+  pipeline for bare-metal Single Node OpenShift with AAP 2.7, OpenShift
+  Virtualization, Compliance Operator, and CIS L1 node hardening as Day 0
+  manifests. Initial scaffolding: `build_sno_installer.yml` playbook, Jinja2
+  templates for `install-config.yaml` and `agent-config.yaml`, Day 0 operator
+  manifests (AAP, CNV, Compliance Operator), `generate-iso.sh` script,
+  `sno_defaults.yml`, ROADMAP Phase 5, and `docs/design.md` §11.
+
 ### Fixed
 - **CIS controls that break WinRM mid-hardening (#79).** Disabled four controls
   in `cis_profile.yml` that kill the WinRM session during the build:
