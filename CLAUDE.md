@@ -154,6 +154,7 @@ See `ROADMAP.md` for the full plan.
 | `playbooks/scripts/remaster_iso.sh` | Windows ISO no-keypress boot patch (El Torito byte-exact overwrite) |
 | `playbooks/scripts/fetch_iso.sh` | Windows ISO fetch helper for the re-master pod |
 | `playbooks/scripts/wim_images.py` | WIM image name parser for `windows_image_name` validation |
+| `playbooks/scripts/verify_cis_disk.py` | Reads CIS hardening off a Windows disk offline; gates the `com.redhat.cis.level` label (#91) |
 | `docs/cis-l1-rhel9-status.md` | Latest validated compliance snapshot |
 | `docs/operations.md` | Operational runbook — manual rebuild, secret rotation, troubleshooting |
 | `.github/workflows/lint.yml` | CI lint gate (yamllint + ansible-lint) on push/PR to main |
