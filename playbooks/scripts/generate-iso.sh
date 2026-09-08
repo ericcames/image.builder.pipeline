@@ -45,8 +45,8 @@ USAGE
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KIT_DIR="${SCRIPT_DIR}/.."
 
-CLUSTER_NAME="demo"
-BASE_DOMAIN="example.com"
+CLUSTER_NAME="edge"
+BASE_DOMAIN="internal.ames.net"
 USE_DHCP=false
 OUTPUT_DIR="."
 OCP_VERSION=""

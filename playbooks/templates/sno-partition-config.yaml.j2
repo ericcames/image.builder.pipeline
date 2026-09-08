@@ -1,0 +1,19 @@
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: 98-root-partition-size
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      disks:
+        - device: {{ sno_disk_device }}
+          partitions:
+            - label: root
+              number: 4
+              sizeMiB: {{ sno_root_partition_size_gb | int * 1024 }}
+              resize: true

@@ -835,7 +835,32 @@ EOF
 5. Document exempt controls in `playbooks/vars/sno_exempt_controls.yml`
 6. Re-run when the CIS benchmark updates
 
-### 11.6 Network — why static IP
+### 11.6 Storage — LVMS and root partition sizing
+
+A bare-metal SNO needs a StorageClass for Compliance Operator scan results,
+VM disks, and general PVC workloads. LVMS (LVM Storage) provides one from
+available block devices.
+
+**Problem:** By default RHCOS grows the root partition to fill the entire disk,
+leaving nothing for LVMS. On the NUC's first install, `sda4` consumed all
+953 GB and the Compliance Operator scan PVCs were stuck Pending indefinitely.
+
+**Solution:** A Day 0 MachineConfig (`98-root-partition-size`) limits the root
+partition to `sno_root_partition_size_gb` (default 200 GB). The remaining disk
+space stays unallocated and LVMS auto-discovers it. The LVMS operator installs
+via Day 0 Subscription; the `LVMCluster` CR is Day 1 because the CRD does not
+exist during bootstrap (same constraint as the ScanSettingBinding, §11.5).
+
+The partition size is configurable because the right split depends on the disk.
+On a 1 TB disk, 200 GB root + 750 GB LVMS. On a 500 GB disk, 150 GB might be
+better. Set `sno_root_partition_size_gb` to `0` to skip the MachineConfig and
+let root grow normally.
+
+The Day 1 `LVMCluster` creation is handled by
+`sales.demos/playbooks/install_lvms.yml`, which creates the VolumeGroup with
+thin provisioning and sets the resulting StorageClass as the cluster default.
+
+### 11.7 Network — why static IP
 
 OpenShift requires DNS records (`api.<cluster>.<domain>` and
 `*.apps.<cluster>.<domain>`) pointing at the node's IP. DHCP risks assigning a
@@ -843,7 +868,7 @@ different IP after a reboot, breaking those records and making the cluster
 unreachable. Static IP is the default; `generate-iso.sh --dhcp` is available
 for quick tests with DHCP reservations.
 
-### 11.7 Scheduled rebuilds
+### 11.8 Scheduled rebuilds
 
 Monthly, on the 1st of the month, via GitHub Actions
 (`sno-installer-rebuild.yml`). Parallel to the RHEL 9 containerDisk rebuild
@@ -854,7 +879,7 @@ Manual trigger via `workflow_dispatch`.
 Secrets: `QUAY_USERNAME` and `QUAY_PASSWORD` (shared with the containerDisk
 rebuild workflow).
 
-### 11.8 Home-lab DNS — dnsmasq alongside systemd-resolved
+### 11.9 Home-lab DNS — dnsmasq alongside systemd-resolved
 
 Consumer routers typically do not support custom DNS A records or wildcards.
 SNO requires both `api.<cluster>.<domain>` and `*.apps.<cluster>.<domain>` to

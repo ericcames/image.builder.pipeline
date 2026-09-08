@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **LVMS operator Day 0 manifest (#97).** `sno-manifests/lvms/` adds the
+  `lvms-operator` Subscription so fresh SNO installs get a StorageClass out of
+  the box. Needed for Compliance Operator scan PVCs and VM disks.
+- **Root partition sizing (#97).** New MachineConfig template limits the root
+  partition to `sno_root_partition_size_gb` (default 200 GB), leaving the rest
+  of the disk for LVMS. Without this, RHCOS grows root to fill the disk and
+  LVMS has nothing to use. Set to 0 to disable.
+
+### Changed
+- **Default cluster name changed from `demo` to `edge` (#97).** Base domain
+  changed from `example.com` to `internal.ames.net`. Aligns with the
+  `sales.demos` inventory environment name and avoids collision with the RHDP
+  `demo` environment.
+- **OCP channel bumped from `stable-4.17` to `stable-4.22` (#97).** Matches
+  the proven NUC install (OCP 4.22.13).
+
 ### Fixed
 - **SNO Day 0 manifest errors found during NUC boot (#95).** Four issues
   blocked or delayed the first ABI ISO bootstrap: (1) AAP subscription used
