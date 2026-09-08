@@ -3,7 +3,7 @@ apiVersion: v1beta1
 kind: AgentConfig
 metadata:
   name: {{ sno_cluster_name }}
-rendezvousIP: {{ sno_node_ip | ansible.utils.ipaddr('address') }}
+rendezvousIP: {{ sno_node_ip.split('/')[0] }}
 hosts:
   - hostname: {{ sno_hostname }}
     role: master
@@ -32,8 +32,8 @@ hosts:
             enabled: true
             dhcp: false
             address:
-              - ip: {{ sno_node_ip | ansible.utils.ipaddr('address') }}
-                prefix-length: {{ sno_node_ip | ansible.utils.ipaddr('prefix') }}
+              - ip: {{ sno_node_ip.split('/')[0] }}
+                prefix-length: {{ sno_node_ip.split('/')[1] }}
           ipv6:
             enabled: false
       dns-resolver:

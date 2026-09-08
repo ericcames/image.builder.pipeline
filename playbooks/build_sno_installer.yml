@@ -15,6 +15,7 @@
           - sno_base_domain is defined
           - sno_hostname is defined
           - sno_node_ip is defined
+          - "'/' in sno_node_ip"
           - sno_interface is defined
           - sno_disk_device is defined
           - sno_mac_address is defined
@@ -23,7 +24,7 @@
           - sno_machine_network is defined
         fail_msg: >-
           Missing required variable. Provide via extra vars:
-          sno_cluster_name, sno_base_domain, sno_hostname, sno_node_ip,
+          sno_cluster_name, sno_base_domain, sno_hostname, sno_node_ip (CIDR, e.g. 192.168.1.100/24),
           sno_interface, sno_disk_device, sno_mac_address,
           sno_pull_secret, sno_ssh_key, sno_machine_network
 
