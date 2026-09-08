@@ -63,6 +63,13 @@
         state: directory
         mode: "0755"
 
+    - name: Render partition config MachineConfig
+      ansible.builtin.template:
+        src: templates/sno-partition-config.yaml.j2
+        dest: "{{ workdir.path }}/openshift/98-root-partition-size.yaml"
+        mode: "0644"
+      when: sno_root_partition_size_gb | default(0) | int > 0
+
     - name: Copy Day 0 manifests
       ansible.builtin.copy:
         src: "{{ item }}"
@@ -72,6 +79,7 @@
         - files/sno-manifests/aap/*.yaml
         - files/sno-manifests/cnv/*.yaml
         - files/sno-manifests/compliance-operator/*.yaml
+        - files/sno-manifests/lvms/*.yaml
         - files/sno-manifests/cis-l1/*.yaml
 
     - name: Download openshift-install

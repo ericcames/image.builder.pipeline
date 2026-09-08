@@ -1,17 +1,21 @@
 ---
-sno_ocp_channel: stable-4.17
+sno_ocp_channel: stable-4.22
 sno_ocp_version: latest
 
 sno_openshift_install_url: >-
   https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ sno_ocp_version }}/openshift-install-linux.tar.gz
 
-sno_cluster_name: demo
-sno_base_domain: example.com
+sno_cluster_name: edge
+sno_base_domain: internal.ames.net
 
 sno_network_type: OVNKubernetes
 sno_service_network: 172.30.0.0/16
 sno_cluster_network: 10.128.0.0/14
 sno_cluster_network_host_prefix: 23
+
+# Limit the root partition so LVMS can use the remaining disk space.
+# Set to 0 to let RHCOS grow the root partition to fill the entire disk.
+sno_root_partition_size_gb: 200
 
 sno_hardware_minimums:
   ram_gb: 32
@@ -21,3 +25,4 @@ sno_hardware_minimums:
 sno_aap_channel: stable-2.7
 sno_cnv_channel: stable
 sno_compliance_operator_channel: stable
+sno_lvms_channel: stable-4.22

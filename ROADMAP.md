@@ -161,12 +161,14 @@ See `docs/design.md` §11 for the full design.
 
 | Task | Status |
 |------|--------|
-| Scaffolding (ROADMAP, design doc §11, directory structure) | Pending |
-| ABI ISO generation playbook + templates | Pending |
-| Day 0 operator manifests (AAP, CNV, Compliance Operator) | Pending |
-| CIS L1 MachineConfigs (extract from reference cluster) | Pending |
+| Scaffolding (ROADMAP, design doc §11, directory structure) | Done (#89) |
+| ABI ISO generation playbook + templates | Done (#89) |
+| Day 0 operator manifests (AAP, CNV, Compliance Operator) | Done (#89, #96) |
+| Day 0 LVMS operator manifest + root partition sizing | Done (#97) |
+| NUC boot + operator verification | Done — OCP 4.22.13, all operators Succeeded |
+| CIS L1 MachineConfigs (extract from reference cluster) | In progress — sandbox scan COMPLIANT (0 remediations); stock RHCOS may not need Day 0 MCs |
 | Quay kit image publishing + monthly rebuild workflow | Pending |
-| NUC validation + documentation | Pending |
+| NUC rebuild with edge/edge naming + LVMS | Pending |
 
 ---
 
