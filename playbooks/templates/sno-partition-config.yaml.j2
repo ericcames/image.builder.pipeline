@@ -9,10 +9,13 @@
 #   CHANGED: partition=4 old: size=419430400 new: size=1999358607
 #
 # Declaring a partition AFTER root is what actually pins it. At ignition-disks
-# time root is still the image's ~4 GiB, so there is room to create partition 5;
-# growpart can then only grow root up to partition 5's start. With no free space
-# left, growpart reports NOCHANGE, which cannot fail the boot because the service
-# invokes it as `growpart "${PKNAME}" "${partnum}" || :`.
+# time root is still the image's ~9 GiB, so there is room to create partition 5;
+# growpart then grows root and is BOUNDED by partition 5's start.
+#
+# growpart still logs CHANGED, and that is correct -- do not read it as the bug
+# returning. The end sector is what tells them apart (measured on the rebuild):
+#   bug:   new: size=1999358607 end=2000409230   <- end of disk
+#   fixed: new: size=418379776  end=419430399    <- stops at partition 5
 #
 # sizeMiB is deliberately omitted so the partition extends to the end of the
 # disk. It is left unformatted and unmounted: LVMS auto-discovery claims unused

@@ -32,8 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   NUC: Ignition set 419430400 sectors (200 GiB), growfs logged
   `CHANGED: partition=4 ... new: size=1999358607`. Sizing root was never the
   right lever. The template now declares partition 5 at that offset instead, so
-  there is no trailing free space to grow into and `growpart` reports NOCHANGE
-  (harmless — the service calls it as `|| :`).
+  `growpart` is bounded by it. Verified on the rebuilt NUC: `sda4` 199.5 GiB,
+  `sda5` 753.9 GiB, 1007 KiB free.
+
+  **`growpart` still logs `CHANGED` — that is the fix working, not the bug
+  (#104).** An earlier draft of this entry said it would report NOCHANGE; root is
+  written at ~9 GiB, so it does grow, just no further than partition 5. Tell them
+  apart by the end sector, not the word: `end=2000409230` is the bug (end of
+  disk), `end=419430399` is correct (stops at partition 5).
 
   This also fixes a second defect that would have survived the first: the design
   doc claimed LVMS auto-discovers unallocated *space*. It discovers unused block
