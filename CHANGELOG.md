@@ -10,10 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **LVMS operator Day 0 manifest (#97).** `sno-manifests/lvms/` adds the
   `lvms-operator` Subscription so fresh SNO installs get a StorageClass out of
   the box. Needed for Compliance Operator scan PVCs and VM disks.
-- **Root partition sizing (#97).** New MachineConfig template limits the root
-  partition to `sno_root_partition_size_gb` (default 200 GB), leaving the rest
-  of the disk for LVMS. Without this, RHCOS grows root to fill the disk and
-  LVMS has nothing to use. Set to 0 to disable.
+- **Root partition sizing (#97, corrected by #101).** New MachineConfig template
+  (`98-lvms-partition`) reserves the tail of the boot disk for LVMS by declaring
+  a partition that starts at `sno_root_partition_size_gb` (default 200 GB), which
+  is what caps root. Without this, RHCOS grows root to fill the disk and LVMS has
+  nothing to use. Set to 0 to disable.
 
 ### Changed
 - **Default cluster name changed from `demo` to `edge` (#97).** Base domain
@@ -24,6 +25,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the proven NUC install (OCP 4.22.13).
 
 ### Fixed
+- **The SNO root partition still filled the disk (#101).** The Day 0
+  MachineConfig sized partition 4 directly. Ignition did that correctly — and
+  `ignition-ostree-growfs` ran a second later and grew it back, because
+  `growpart` expands root into any free space that follows it. Measured on the
+  NUC: Ignition set 419430400 sectors (200 GiB), growfs logged
+  `CHANGED: partition=4 ... new: size=1999358607`. Sizing root was never the
+  right lever. The template now declares partition 5 at that offset instead, so
+  there is no trailing free space to grow into and `growpart` reports NOCHANGE
+  (harmless — the service calls it as `|| :`).
+
+  This also fixes a second defect that would have survived the first: the design
+  doc claimed LVMS auto-discovers unallocated *space*. It discovers unused block
+  **devices**, and skips devices with children, so `/dev/sda` was never eligible.
+  Partition 5 is left unformatted and unmounted so LVMS claims it with no
+  `deviceSelector` change in `install_lvms.yml`.
 - **SNO Day 0 manifest errors found during NUC boot (#95).** Four issues
   blocked or delayed the first ABI ISO bootstrap: (1) AAP subscription used
   package name `aap-operator` instead of `ansible-automation-platform-operator`,
