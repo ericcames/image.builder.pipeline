@@ -1,10 +1,29 @@
 ---
+# Reserve the tail of the boot disk for LVMS.
+#
+# Do NOT try to size partition 4 here. Ignition honours that directive, but
+# ignition-ostree-growfs runs immediately afterwards and growpart expands root
+# into any free space that follows it, undoing the resize. Measured on the NUC's
+# first boot: Ignition set partition 4 to 419430400 sectors (200 GiB), and one
+# second later growfs logged
+#   CHANGED: partition=4 old: size=419430400 new: size=1999358607
+#
+# Declaring a partition AFTER root is what actually pins it. At ignition-disks
+# time root is still the image's ~4 GiB, so there is room to create partition 5;
+# growpart can then only grow root up to partition 5's start. With no free space
+# left, growpart reports NOCHANGE, which cannot fail the boot because the service
+# invokes it as `growpart "${PKNAME}" "${partnum}" || :`.
+#
+# sizeMiB is deliberately omitted so the partition extends to the end of the
+# disk. It is left unformatted and unmounted: LVMS auto-discovery claims unused
+# partitions, so playbooks/install_lvms.yml needs no deviceSelector. The label
+# only has to avoid the reserved bios/boot/reserved names that LVMS filters out.
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
   labels:
     machineconfiguration.openshift.io/role: master
-  name: 98-root-partition-size
+  name: 98-lvms-partition
 spec:
   config:
     ignition:
@@ -13,7 +32,7 @@ spec:
       disks:
         - device: {{ sno_disk_device }}
           partitions:
-            - label: root
-              number: 4
-              sizeMiB: {{ sno_root_partition_size_gb | int * 1024 }}
-              resize: true
+            - label: lvms
+              number: 5
+              startMiB: {{ sno_root_partition_size_gb | int * 1024 }}
+              wipePartitionEntry: true

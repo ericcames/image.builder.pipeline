@@ -845,14 +845,53 @@ available block devices.
 leaving nothing for LVMS. On the NUC's first install, `sda4` consumed all
 953 GB and the Compliance Operator scan PVCs were stuck Pending indefinitely.
 
-**Solution:** A Day 0 MachineConfig (`98-root-partition-size`) limits the root
-partition to `sno_root_partition_size_gb` (default 200 GB). The remaining disk
-space stays unallocated and LVMS auto-discovers it. The LVMS operator installs
-via Day 0 Subscription; the `LVMCluster` CR is Day 1 because the CRD does not
-exist during bootstrap (same constraint as the ScanSettingBinding, §11.5).
+**Sizing the root partition does not fix this, and the first attempt proved it.**
+A Day 0 MachineConfig set partition 4 to 200 GiB with `resize: true`. Ignition
+honoured it exactly — and `ignition-ostree-growfs` grew it straight back one
+second later (measured on the NUC, 2026-09-08):
+
+```
+22:06:27 ignition[921]: running sgdisk with options:
+                        [--delete=4 --new=4:1050624:+419430400 ...]   # 200 GiB
+22:06:30 ignition-ostree-growfs[1051]: CHANGED: partition=4
+                        old: size=419430400  new: size=1999358607
+```
+
+`ignition-disks.service` runs first; `ignition-ostree-growfs.service` then runs
+`growpart` unconditionally and expands root into whatever free space follows it.
+Anything the Ignition `disks` stage does to partition 4 is overwritten moments
+later. This is not a bug to work around — it is the mechanism the fix uses.
+
+**Solution:** A Day 0 MachineConfig (`98-lvms-partition`) declares a *new*
+partition 5 starting at `sno_root_partition_size_gb`, with no `sizeMiB` so it
+runs to the end of the disk. At `ignition-disks` time root is still the image's
+~4 GiB, so there is room to create it. `growpart` can then only grow root into
+the free space ahead of partition 5, which pins root at that offset — this is
+what Red Hat's separate-`/var` guidance means by "the root filesystem
+automatically resizes to fill all available space up to the specified offset".
+With the disk full, `growpart` reports NOCHANGE, which cannot fail the boot: the
+service invokes it as `growpart "${PKNAME}" "${partnum}" || :`.
+
+Deriving root's size from partition 5's offset also avoids hardcoding partition
+4's 1050624-sector (513 MiB) start, an RHCOS layout constant that is not ours to
+depend on.
+
+**LVMS needs a device, not free space, and this note used to say otherwise.**
+The earlier text claimed the remaining space "stays unallocated and LVMS
+auto-discovers it". That could never have worked: LVMS discovers unused *block
+devices*, and its dynamic discovery further excludes devices that have children,
+so `/dev/sda` is ineligible however root is sized. Partition 5 is therefore left
+unformatted and unmounted rather than merely unallocated — an unused partition is
+exactly what LVMS claims, so `install_lvms.yml` needs no `deviceSelector`. Its
+label only has to avoid the reserved `bios` / `boot` / `reserved` names that LVMS
+filters out.
+
+The LVMS operator installs via Day 0 Subscription; the `LVMCluster` CR is Day 1
+because the CRD does not exist during bootstrap (same constraint as the
+ScanSettingBinding, 11.5).
 
 The partition size is configurable because the right split depends on the disk.
-On a 1 TB disk, 200 GB root + 750 GB LVMS. On a 500 GB disk, 150 GB might be
+On a 1 TB disk, 200 GB root + ~750 GB LVMS. On a 500 GB disk, 150 GB might be
 better. Set `sno_root_partition_size_gb` to `0` to skip the MachineConfig and
 let root grow normally.
 

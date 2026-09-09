@@ -13,8 +13,11 @@ sno_service_network: 172.30.0.0/16
 sno_cluster_network: 10.128.0.0/14
 sno_cluster_network_host_prefix: 23
 
-# Limit the root partition so LVMS can use the remaining disk space.
-# Set to 0 to let RHCOS grow the root partition to fill the entire disk.
+# Where the LVMS partition starts, which is what caps the root partition.
+# A partition declared after root stops growpart expanding into the tail of the
+# disk; sizing root directly does not work, because ignition-ostree-growfs runs
+# after ignition-disks and undoes it (see docs/design.md 11.6).
+# Set to 0 to skip the MachineConfig and let root fill the entire disk.
 sno_root_partition_size_gb: 200
 
 sno_hardware_minimums:
