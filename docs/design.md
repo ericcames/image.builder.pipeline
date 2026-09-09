@@ -869,8 +869,34 @@ runs to the end of the disk. At `ignition-disks` time root is still the image's
 the free space ahead of partition 5, which pins root at that offset — this is
 what Red Hat's separate-`/var` guidance means by "the root filesystem
 automatically resizes to fill all available space up to the specified offset".
-With the disk full, `growpart` reports NOCHANGE, which cannot fail the boot: the
-service invokes it as `growpart "${PKNAME}" "${partnum}" || :`.
+
+**`growpart` still logs `CHANGED`, and that is the fix working — not the bug
+returning.** This note first said it would report NOCHANGE, which was wrong: root
+is written from the image at only ~9 GiB, so `growpart` does grow it. What
+changed is that it is now *bounded*. Measured on the rebuild (2026-09-09):
+
+```
+ignition[930]: running sgdisk: [--new=5:419430400:+0 --change-name=5:lvms]
+ignition-ostree-growfs[1060]: CHANGED: partition=4 start=1050624
+                              old: size=18953499  end=20004122
+                              new: size=418379776 end=419430399
+```
+
+`CHANGED: partition=4` is the same line quoted above as the signature of the
+defect, so the word is useless on its own. **The end sector is the tell:**
+
+| | `new: ... end=` | meaning |
+|---|---|---|
+| bug | `2000409230` | end of disk — root ate everything |
+| fixed | `419430399` | one sector before partition 5 |
+
+Resulting layout, with essentially nothing left over:
+
+```
+   4         1050624       419430399   199.5 GiB   8304  root
+   5       419430400      2000407216   753.9 GiB   8300  lvms
+Total free space is 2014 sectors (1007.0 KiB)
+```
 
 Deriving root's size from partition 5's offset also avoids hardcoding partition
 4's 1050624-sector (513 MiB) start, an RHCOS layout constant that is not ours to
