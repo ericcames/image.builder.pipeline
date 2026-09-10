@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Defaults are named once and read by both usage() and the parser, so the help
+# text cannot drift from the code again (#109). They match
+# playbooks/vars/sno_defaults.yml.
+DEFAULT_CLUSTER_NAME="edge"
+DEFAULT_BASE_DOMAIN="internal.ames.net"
+
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [OPTIONS]
@@ -20,8 +26,8 @@ Required:
   --mac ADDRESS         MAC address of the network interface
 
 Optional:
-  --cluster-name NAME   Cluster name (default: demo)
-  --base-domain DOMAIN  Base domain (default: example.com)
+  --cluster-name NAME   Cluster name (default: ${DEFAULT_CLUSTER_NAME})
+  --base-domain DOMAIN  Base domain (default: ${DEFAULT_BASE_DOMAIN})
   --machine-network CIDR  Machine network CIDR (default: derived from --ip)
   --ocp-version VER     OCP version (default: latest from configured channel)
   --dhcp                Use DHCP instead of static IP (--gateway and --dns not required)
@@ -45,8 +51,8 @@ USAGE
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KIT_DIR="${SCRIPT_DIR}/../.."
 
-CLUSTER_NAME="edge"
-BASE_DOMAIN="internal.ames.net"
+CLUSTER_NAME="$DEFAULT_CLUSTER_NAME"
+BASE_DOMAIN="$DEFAULT_BASE_DOMAIN"
 USE_DHCP=false
 OUTPUT_DIR="."
 OCP_VERSION=""
