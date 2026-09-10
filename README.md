@@ -23,17 +23,28 @@ consumes the compliance data, and nothing here depends on either. See
 
 ## Getting started
 
-**New machine, or a fresh clone? Start with the `first-time` skill.** It
-validates every local prerequisite — the Automation Hub token, the collections,
-and the AWS credential pattern — and touches no AWS or Red Hat API doing it:
+**Consuming the images?** You do not need this repo. The AMIs and containerDisks
+are published, and the only thing binding a consumer to this repo is one image
+tag. Go to [sales.demos](https://github.com/ericcames/sales.demos) — it points a
+cluster at a published containerdisk and never builds one. Nothing below applies
+to you.
+
+**Building or publishing an image?** New machine, or a fresh clone? **Start with
+the `first-time` skill.** It validates every local prerequisite — the Automation
+Hub token, the collections, and the AWS credential pattern — and touches no AWS
+or Red Hat API doing it:
 
 ```bash
+git clone https://github.com/ericcames/image.builder.pipeline.git
+cd image.builder.pipeline
 claude .
 # then:  /first-time
 ```
 
-It reads perfectly well as a checklist if you would rather work through it by
-hand — [`.claude/skills/first-time/SKILL.md`](.claude/skills/first-time/SKILL.md).
+[`.claude/skills/first-time/SKILL.md`](.claude/skills/first-time/SKILL.md) is
+written to be *run* as a skill in Claude Code, but its Step 0 audit is a plain
+shell block — paste it into a terminal and work down the list by hand if you do
+not have Claude Code.
 
 ### Prerequisites
 
@@ -69,6 +80,32 @@ podman login quay.io                  # one-time setup
 # QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
 ansible-playbook playbooks/build_cis_containerdisk.yml
 ```
+
+### Working across both repos
+
+Most work needs only one of the two. Some spans both — the edge / SNO demo does
+by construction, since the installer ISO is built here and the cluster is
+configured in `sales.demos`.
+
+When it does, clone both and **start the agent in `sales.demos`, not here**:
+
+```bash
+git clone https://github.com/ericcames/sales.demos.git
+git clone https://github.com/ericcames/image.builder.pipeline.git
+cd sales.demos
+claude .
+```
+
+That repo's `.mcp.json` is project-scoped, so its cluster servers load only in a
+session started in *that* directory — and **this repo has no MCP servers at
+all**, so a session started here gets no cluster tools. From there you can
+`cd ../image.builder.pipeline` and run these playbooks anyway, because the
+working directory does not restrict shell access. Better in one direction only.
+
+**This repo's skills are the exception.** Skills are discovered from the
+directory the agent starts in, so `first-time`, `dev-workflow`,
+`rhel9-containerdisk` and `windows-image-build` are **not** reachable from a
+session started in `sales.demos`. Open a second session here to use them.
 
 ## Overview
 

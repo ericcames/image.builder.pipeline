@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Getting started opened with AWS prerequisites, but most readers only consume
+  what this repo publishes (#114).** The README already says four lines above it
+  that this repo is the producer and the dependency runs outward — Getting
+  started did not act on that. It now opens with three doors: consuming the
+  images (you do not need this repo — go to `sales.demos`), building or
+  publishing one (the previous content, pipeline commands unchanged), and
+  working across both repos. Mirrors the shape applied in sales.demos#418.
+- **The cross-repo working shape is now stated, and it points away from here.**
+  A session spanning both repos must start in `sales.demos`, because its
+  `.mcp.json` is project-scoped and **this repo has no MCP servers at all**. From
+  there you can `cd` here and run these playbooks, since the working directory
+  does not restrict shell access — better in one direction only. The new
+  `### Working across both repos` subsection also says plainly that **this
+  repo's skills are not reachable from that session**: `first-time`,
+  `dev-workflow`, `rhel9-containerdisk` and `windows-image-build` are discovered
+  only from a session started here, so `/first-time` typed over there gets
+  nothing.
+- **The `git clone` step was missing.** Getting started began at `claude .` with
+  no instruction to obtain the repo first.
+- **The by-hand fallback is now specific instead of reassuring.** It said the
+  skill "reads perfectly well as a checklist"; it now names the Step 0 audit as
+  the plain shell block to paste, which is the part that actually is one.
+  Claude Code stays named as the primary path — deliberately not "your favorite
+  AI agent", which would be false, since other agents do not discover
+  `.claude/skills/`.
+
 ### Added
 - **Issue chooser (#111).** `.github/ISSUE_TEMPLATE/config.yml` sets
   `blank_issues_enabled: false` and adds contact links to the roadmap, the
