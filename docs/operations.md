@@ -38,6 +38,31 @@ download ~2-5 min, podman build + push ~3-5 min).
 
 ---
 
+## Quay.io private repository entitlement
+
+The Windows containerDisk is published to a **private** Quay.io repository —
+Microsoft licensing prohibits public redistribution of Windows media. The RHEL
+containerDisk is public and needs no entitlement.
+
+**Current state: entitled.** An Unlimited Repositories subscription is active to
+**2027-08-14**. Nothing needs doing until then.
+
+### If the entitlement lapses
+
+Quay's free Open Source plan includes **0 private repositories**. Without an
+entitlement Quay shows a warning banner on the repository — it is a warning, not
+a block, and an existing private repo keeps working while it is displayed. To
+restore it you need either the Developer plan (5 private repos) or a Red Hat
+developer subscription that includes private-repo access; Red Hat associates
+open a support case requesting the latter.
+
+The symptom to expect first is a **push** failure, not a pull failure, so a
+scheduled rebuild breaks before any consumer does.
+
+The banner, from when this was live:
+
+![Quay.io private repo entitlement notification](images/quay-private-repo-entitlement.png)
+
 ## Secret rotation
 
 Three GitHub Actions secrets power the scheduled containerDisk rebuild:
