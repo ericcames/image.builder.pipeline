@@ -108,6 +108,12 @@ if ! command -v ansible-playbook &>/dev/null; then
   exit 1
 fi
 
+# Created and resolved to an absolute path here, before the playbook runs, so
+# the playbook receives a path that does not depend on its working directory,
+# and a bad --output-dir fails now rather than after the ISO is built (#103).
+mkdir -p "$OUTPUT_DIR" || { echo "Error: cannot create output directory: $OUTPUT_DIR" >&2; exit 1; }
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+
 if [[ -z "${MACHINE_NETWORK:-}" ]]; then
   MACHINE_NETWORK="$(python3 -c "import ipaddress,sys; n=ipaddress.ip_interface(sys.argv[1]).network; print(n)" "$NODE_IP")"
 fi
@@ -137,7 +143,7 @@ print(json.dumps({
   "$SSH_KEY_CONTENT" > "$VARS_FILE"
 chmod 600 "$VARS_FILE"
 
-EXTRA_VARS=(-e "@${VARS_FILE}")
+EXTRA_VARS=(-e "@${VARS_FILE}" -e "sno_output_dir=${OUTPUT_DIR}")
 
 if [[ -n "${GATEWAY:-}" ]]; then
   EXTRA_VARS+=(-e "sno_gateway=${GATEWAY}")
@@ -158,6 +164,7 @@ echo "  Hostname:  ${HOSTNAME_VAL}"
 echo "  IP:        ${NODE_IP}"
 echo "  Interface: ${INTERFACE}"
 echo "  Disk:      ${DISK}"
+echo "  Output:    ${OUTPUT_DIR}/agent.x86_64.iso"
 echo "  Network:   $(if [[ "$USE_DHCP" == "true" ]]; then echo DHCP; else echo "Static (gw=${GATEWAY}, dns=${DNS})"; fi)"
 echo
 
