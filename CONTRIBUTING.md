@@ -13,7 +13,7 @@ Open issue → branch from main → implement → open PR (Closes #N) → merge 
 3. **One concern per PR** — group changes by shared root cause, not item count. The test: would you revert these together? If yes, ship them together. Behavior changes stay isolated regardless.
 4. **Reference the issue** — include `Closes #<number>` in your PR description so the issue closes automatically on merge.
 5. **PRs target `main`** — `main` is protected; a PR is always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass before merge.
-6. **Update CHANGELOG.md** — every PR must include a CHANGELOG entry grouped under Added / Changed / Fixed.
+6. **There is no changelog to update** — the per-PR obligation was retired in #119. What changed lives in `git log` and the closed issue; the accumulated history is archived at <https://ericcames.github.io/sales.demos-docs/reference/history/>.
 
 ## Branch naming
 
