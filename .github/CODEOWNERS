@@ -1,24 +1,32 @@
 # Code owners for image.builder.pipeline.
-# GitHub requests review from these owners when matching paths change.
+#
+# Listing an owner here REQUESTS a review automatically when a matching path
+# changes. It does NOT gate the merge: on `main` this repo has
+# `require_code_owner_reviews` = false and `required_approving_review_count` = 0,
+# both deliberate. See CLAUDE.md — the point is the branch-and-PR flow, not
+# waiting on a second person's availability.
+#
+# A rule naming a path that does not exist, or a user who cannot be resolved, is
+# SILENTLY INERT. Check with: gh api repos/ericcames/image.builder.pipeline/codeowners/errors
 
 # Catch-all
-*                       @ericcames
+*                       @ericcames @mlowcher61
 
 # The conventions contract — changes here need extra scrutiny.
-/CLAUDE.md              @ericcames
-/CONTRIBUTING.md        @ericcames
+/CLAUDE.md              @ericcames @mlowcher61
+/CONTRIBUTING.md        @ericcames @mlowcher61
 
 # Secret hygiene — this repo is public.
-/.gitignore             @ericcames
-/.github/               @ericcames
+/.gitignore             @ericcames @mlowcher61
+/.github/               @ericcames @mlowcher61
 
 # The pipeline itself
-/playbooks/             @ericcames
-/roles/                 @ericcames
-/inventories/           @ericcames
-/collections/           @ericcames
-/.claude/skills/        @ericcames
+/playbooks/             @ericcames @mlowcher61
+/roles/                 @ericcames @mlowcher61
+/inventories/           @ericcames @mlowcher61
+/collections/           @ericcames @mlowcher61
+/.claude/skills/        @ericcames @mlowcher61
 
 # Governance + docs
-/docs/                  @ericcames
-/ROADMAP.md             @ericcames
+/docs/                  @ericcames @mlowcher61
+/ROADMAP.md             @ericcames @mlowcher61
