@@ -1,0 +1,24 @@
+# Code owners for image.builder.pipeline.
+# GitHub requests review from these owners when matching paths change.
+
+# Catch-all
+*                       @ericcames
+
+# The conventions contract — changes here need extra scrutiny.
+/CLAUDE.md              @ericcames
+/CONTRIBUTING.md        @ericcames
+
+# Secret hygiene — this repo is public.
+/.gitignore             @ericcames
+/.github/               @ericcames
+
+# The pipeline itself
+/playbooks/             @ericcames
+/roles/                 @ericcames
+/inventories/           @ericcames
+/collections/           @ericcames
+/.claude/skills/        @ericcames
+
+# Governance + docs
+/docs/                  @ericcames
+/ROADMAP.md             @ericcames

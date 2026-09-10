@@ -1,8 +1,74 @@
 # image.builder.pipeline
 
-Automation pipeline for building CIS-compliant images via Red Hat Image Builder,
-scanning with OpenSCAP, and generating structured policy compliance data for
-[rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries).
+The image factory. It takes a Red Hat Image Builder blueprint and returns a
+CIS-hardened machine image together with the evidence that it *is* hardened — an
+AWS AMI or an OpenShift Virtualization containerDisk, plus OpenSCAP scan results
+parsed into policy data that OPA can enforce against. Hardening an image is the
+straightforward half. Proving it stayed hardened is the half that gets asked
+about with a customer in the room, and that is what the scan and generate stages
+are for.
+
+| | |
+|---|---|
+| **For** | Anyone who needs a hardened base image *and* the compliance evidence behind it |
+| **Produces** | CIS L1 AMIs, containerDisks on Quay.io, and `data.json` policy data |
+| **Run it** | One `ansible-playbook` per stage — see [Getting started](#getting-started) |
+| **Status** | RHEL 9 complete — OpenSCAP 98.07 against a 95-point gate. See [Supported platforms](#supported-platforms) |
+
+**This repo is the producer**, and the dependency only ever runs outward:
+[sales.demos](https://github.com/ericcames/sales.demos) consumes the images,
+[rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries)
+consumes the compliance data, and nothing here depends on either. See
+[Related repositories](#related-repositories).
+
+## Getting started
+
+**New machine, or a fresh clone? Start with the `first-time` skill.** It
+validates every local prerequisite — the Automation Hub token, the collections,
+and the AWS credential pattern — and touches no AWS or Red Hat API doing it:
+
+```bash
+claude .
+# then:  /first-time
+```
+
+It reads perfectly well as a checklist if you would rather work through it by
+hand — [`.claude/skills/first-time/SKILL.md`](.claude/skills/first-time/SKILL.md).
+
+### Prerequisites
+
+- Red Hat account with Image Builder access (console.redhat.com)
+- Red Hat offline token in `~/.ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
+  (same token used for Automation Hub — obtain from console.redhat.com → Automation Hub → Connect to Hub → API token)
+- AWS credentials with EC2 permissions
+- Ansible collections (installed via requirements.yml)
+
+```bash
+ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+```
+
+### AMI pipeline (AWS)
+
+```bash
+cp -r inventories/sample/ inventories/<customer>-<platform>/
+
+export AWS_ACCESS_KEY_ID=<key>
+export AWS_SECRET_ACCESS_KEY=<secret>
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCOUNT_ID=<your_aws_account_id>
+
+ansible-playbook -i inventories/<customer>-<platform>/ playbooks/build_cis_image.yml
+ansible-playbook -i inventories/<customer>-<platform>/ playbooks/deploy_and_scan.yml
+ansible-playbook -i inventories/<customer>-<platform>/ playbooks/generate_policy_data.yml
+```
+
+### containerDisk pipeline (OpenShift Virt)
+
+```bash
+podman login quay.io                  # one-time setup
+# QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
+ansible-playbook playbooks/build_cis_containerdisk.yml
+```
 
 ## Overview
 
@@ -33,7 +99,7 @@ Red Hat Image Builder (console.redhat.com)
    _libraries/golden_images/  OpenShift Virt VMs
 ```
 
-## Supported Platforms
+## Supported platforms
 
 | Platform | Output | CIS Benchmark | Status |
 |----------|--------|--------------|--------|
@@ -58,43 +124,6 @@ Workflows in this repo are packaged as skills under `.claude/skills/`.
 | `dev-workflow` | The mandatory issue → branch → PR → merge cycle |
 | `rhel9-containerdisk` | Builds the RHEL 9 CIS L1 containerDisk (Phase 1.7) |
 | `windows-image-build` | Builds the Windows Server 2022 containerDisk (Phase 3) |
-
-## Prerequisites
-
-- Red Hat account with Image Builder access (console.redhat.com)
-- Red Hat offline token in `~/.ansible.cfg` under `[galaxy_server.rh_certified]` as `token=`
-  (same token used for Automation Hub — obtain from console.redhat.com → Automation Hub → Connect to Hub → API token)
-- AWS credentials with EC2 permissions
-- Ansible collections (installed via requirements.yml)
-
-```bash
-ansible-galaxy collection install -r collections/requirements.yml -p ./collections
-```
-
-## Quick Start
-
-### AMI pipeline (AWS)
-
-```bash
-cp -r inventories/sample/ inventories/<customer>-<platform>/
-
-export AWS_ACCESS_KEY_ID=<key>
-export AWS_SECRET_ACCESS_KEY=<secret>
-export AWS_DEFAULT_REGION=us-east-1
-export AWS_ACCOUNT_ID=<your_aws_account_id>
-
-ansible-playbook -i inventories/<customer>-<platform>/ playbooks/build_cis_image.yml
-ansible-playbook -i inventories/<customer>-<platform>/ playbooks/deploy_and_scan.yml
-ansible-playbook -i inventories/<customer>-<platform>/ playbooks/generate_policy_data.yml
-```
-
-### containerDisk pipeline (OpenShift Virt)
-
-```bash
-podman login quay.io                  # one-time setup
-# QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
-ansible-playbook playbooks/build_cis_containerdisk.yml
-```
 
 ## Output
 
