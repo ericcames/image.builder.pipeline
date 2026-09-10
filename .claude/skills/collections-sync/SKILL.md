@@ -112,5 +112,6 @@ A version bump is a behavior change. Per CLAUDE.md and the dev-workflow skill:
 
 - Open an issue first, label it.
 - Test the pipeline with the new version before committing.
-- Note the bump in `CHANGELOG.md`.
+- Say what moved and why in the issue and the PR body. There is no changelog
+  (#119).
 - One concern per PR — a bump ships on its own, not bundled with unrelated work.

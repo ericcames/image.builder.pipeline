@@ -75,7 +75,13 @@ the rules that came out of it, and each one is paid for.
 ### Hygiene
 - **Always delete tokens.** Any playbook that creates a Red Hat or AAP token must delete it in an `always:` block.
 - **Credentials never in repo.** RH token from `~/.ansible.cfg`; AWS via env vars; `docs/aws-environment.md` is gitignored for local notes.
-- **Maintain CHANGELOG.md** for every PR — grouped by Added / Changed / Fixed.
+- **There is no CHANGELOG.md, and adding one back is not the fix** (#119). It
+  never had a release to anchor it — 19 entry blocks under a single
+  `[Unreleased]` heading, zero tags, zero releases — and the same prose was
+  written three times: issue, commit message, entry. What changed lives in
+  `git log` and the closed issue; why a convention exists lives here; what is
+  planned lives in `ROADMAP.md`. Everything before 2026-09-10 is archived at
+  <https://ericcames.github.io/sales.demos-docs/reference/history/>.
 - **One concern per PR** — group by shared root cause, not item count.
 - **ansible.platform over ansible.controller** wherever possible. `ansible.controller` is legacy.
 

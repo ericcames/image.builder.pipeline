@@ -20,9 +20,9 @@ Open issue → branch from main → implement → open PR (Closes #N) → CI gre
    (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`).
    Types: `feat`, `fix`, `docs`, `chore`, `refactor`.
 
-3. **Implement.** Update `CHANGELOG.md` (Added / Changed / Fixed). Maintain the
-   consumer contracts — every change must hold for all consumers listed in
-   CLAUDE.md.
+3. **Implement.** Maintain the consumer contracts — every change must hold for
+   all consumers listed in CLAUDE.md. There is no changelog to update (#119);
+   say what changed and why in the issue and the PR body.
 
 4. **Open a PR.** Include `Closes #<number>` in the body. Summary + test plan.
    Use `gh pr create --head <branch>` rather than relying on checkout state.

@@ -16,7 +16,6 @@
 
 ## Checklist
 
-- [ ] CHANGELOG.md updated (Added / Changed / Fixed)
 - [ ] No credentials, tokens, or inventory files committed
 
 ## Related Issues

@@ -187,6 +187,13 @@ that script exists.
 Audit-tag evidence capture and the `data.json` generator are the two Phase 3
 tasks still open — see [ROADMAP.md](ROADMAP.md).
 
+**What changed and when** lives in `git log` and the
+[closed issues](https://github.com/ericcames/image.builder.pipeline/issues?q=is%3Aissue+is%3Aclosed).
+The per-PR changelog was retired in
+[#119](https://github.com/ericcames/image.builder.pipeline/issues/119) and its
+history is archived at
+<https://ericcames.github.io/sales.demos-docs/reference/history/>.
+
 ## Claude skills
 
 Workflows in this repo are packaged as skills under `.claude/skills/`.
