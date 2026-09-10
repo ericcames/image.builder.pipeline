@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The Windows row said "built and published" with a caveat that the tag's
+  hardening had not been re-verified. It had been, and thoroughly (#112).**
+  `win2k22-cis-l1-golden:20260908-1853` measures 10 of 10 controls impossible on
+  a clean install -- off the media *and* off the booted guest's own disk -- and
+  **27 of 27 (100%)** across the full set on a clone confirmed rebuilt from the
+  DataSource serving that image (sales.demos#358, #382). The row now says
+  **Complete**.
+- **The caveat was written from the artifact and the label, and missed the
+  record.** `skopeo inspect` and a green consumer scan genuinely prove nothing,
+  which is what I checked; the verification lives in sales.demos' CHANGELOG and
+  in `playbooks/scripts/verify_cis_disk.py`, which runs inside the publish and
+  **refuses to apply an L1 label the disk does not support**. The label is a gate
+  output, not an assertion -- that is what changed after #91, and it is the part
+  the previous wording missed.
+- The two genuine non-evidence points are kept, because both still look like
+  proof: a green `Windows Day 1 - 4 Compliance Scan` (the consumer's
+  `windows_compliance_fail_on_noncompliant` defaults to `false`, so it reports
+  rather than gates) and a bare `cis.level=L1` label, which is exactly what #91
+  was.
+- Also records that `sysprep /generalize` strips nothing, measured off the
+  sysprepped guest's disk.
+
 ### Changed
 - **The platform table said Windows Server 2022 was "Phase 3", and the tag it
   points at has been in production use for days (#112).** Every task that row

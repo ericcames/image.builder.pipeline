@@ -139,35 +139,50 @@ Red Hat Image Builder (console.redhat.com)
 | RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Complete** (public repo) |
 | RHEL 8 | AMI | CIS Level 1 Server | Phase 2 |
 | RHEL 10 | AMI | CIS Level 1 Server | Phase 2 — pending benchmark |
-| Windows Server 2022 | containerDisk | CIS Level 1 | **Built and published** — 44 controls applied, consumed by `sales.demos` ([caveat](#the-windows-row-says-published-not-verified)) |
+| Windows Server 2022 | containerDisk | CIS Level 1 | **Complete** — 27 / 27 on a running clone, verified off the media too ([how it is verified](#how-the-windows-image-is-verified)) |
 
 See [ROADMAP.md](ROADMAP.md) for full platform schedule and
 [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
 latest RHEL 9 compliance snapshot.
 
-### The Windows row says "published", not "verified"
+### How the Windows image is verified
 
-The RHEL 9 row quotes a score because one exists: OpenSCAP 98.07 against a
-95-point gate. The Windows row cannot, and the distinction is deliberate.
+OpenSCAP ships no Windows agent, so this row cannot quote a scanner score the way
+RHEL 9 does. It is verified two other ways, independently.
 
-[#91](https://github.com/ericcames/image.builder.pipeline/issues/91) was a tag
-labelled `cis.level=L1` whose disk was the unhardened build from two days
-earlier — a publish repackaged a stale local `disk.qcow2` because the conversion
-was guarded by `creates:` on a file cleanup never removed. The guest scored 9 of
-27. **The label is therefore not evidence**, and neither is a green compliance
-scan: `windows_compliance_fail_on_noncompliant` defaults to `false` in the
-consumer, so that job reports a score rather than gating on one.
+**Off the media, before anything boots.** `playbooks/scripts/verify_cis_disk.py`
+reads the registry hives out of the qcow2 about to be packaged and **refuses to
+apply an L1 label the disk does not support** — failing equally when it cannot
+reach a verdict. It runs inside `publish_windows_containerdisk.yml`, so the label
+is a gate output rather than an assertion. `sales.demos` has a second,
+independent reader, `utilities/inspect-golden-image.py`, for checking a published
+tag before linking it.
 
-What *is* known about the current tag: it was built sixty-one minutes after the
-#91 fix landed, so it is the first publish with the stale-artifact path removed,
-and `sales.demos` reports the clone reaching the desktop with `win_ping`
-succeeding from AAP.
+**On a running clone.** `win2k22-cis-l1-golden:20260908-1853` measures **10 of 10
+controls that cannot exist on a clean install** — on the media, and again on the
+booted, sysprepped guest's own disk — and **27 of 27 (100%)** across the full
+control set, on a guest confirmed rebuilt from the DataSource serving that image
+([sales.demos#358](https://github.com/ericcames/sales.demos/issues/358),
+[#382](https://github.com/ericcames/sales.demos/issues/382)).
 
-To turn "published" into "verified", scan a guest as a gate:
+That also settled a two-day suspicion: **`sysprep /generalize` strips nothing.**
 
-```
-Windows Day 1 - 4 Compliance Scan  -e windows_compliance_fail_on_noncompliant=true
-```
+#### Two things that are not evidence
+
+Worth naming, because both look like proof.
+
+**A green `Windows Day 1 - 4 Compliance Scan`.** The consumer's
+`windows_compliance_fail_on_noncompliant` defaults to `false` — the scan is a
+report, not a gate, deliberately, so a red workflow node never appears in front
+of a customer. Turn it on when you want the scan to gate.
+
+**A `cis.level=L1` label on its own.** That is what
+[#91](https://github.com/ericcames/image.builder.pipeline/issues/91) was: the tag
+`20260907-0516` carried the label while the disk underneath was the unhardened
+build from two days earlier, published because a `creates:`-guarded conversion
+repackaged a stale local qcow2. The guest scored 9 of 27. The label means
+something now only because `verify_cis_disk.py` stands behind it — which is why
+that script exists.
 
 Audit-tag evidence capture and the `data.json` generator are the two Phase 3
 tasks still open — see [ROADMAP.md](ROADMAP.md).
