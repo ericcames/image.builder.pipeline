@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Issue chooser (#111).** `.github/ISSUE_TEMPLATE/config.yml` sets
+  `blank_issues_enabled: false` and adds contact links to the roadmap, the
+  operational runbook, the security policy, and `sales.demos` for anyone whose
+  question is about *consuming* an image rather than building one.
+  `bug_report.md` and `feature_request.md` already existed, but GitHub offered
+  "Open a blank issue" beside them, so people took it.
+- **`.github/CODEOWNERS` (#111).** There was none, so no review was ever
+  auto-requested on a PR. `sales.demos` has had one; this repo now matches.
 - **LVMS operator Day 0 manifest (#97).** `sno-manifests/lvms/` adds the
   `lvms-operator` Subscription so fresh SNO installs get a StorageClass out of
   the box. Needed for Compliance Operator scan PVCs and VM disks.
@@ -17,6 +25,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   nothing to use. Set to 0 to disable.
 
 ### Changed
+- **README opens with what the factory is for, not how it works (#111).** It
+  led with *"This pipeline automates four stages"* -- accurate, and it told a
+  reader nothing about who the repo is for or what they get. Replaced with a
+  value-first executive summary and an at-a-glance table
+  (For / Produces / Run it / Status). The four-stage list is unchanged, now
+  under `## Overview`.
+- **`Quick Start` is now `Getting started`, and it moved (#111).** It sat fifth,
+  about 55 lines down, behind Overview, Architecture, Supported platforms and
+  the skills table -- so the section a new operator needs first was the last one
+  they reached. It now follows the executive summary directly, matching
+  `sales.demos` and `sales.demos-docs`. `Prerequisites` folded in beneath it as
+  `### Prerequisites` rather than standing alone before it.
+- **Getting started leads with the `first-time` skill (#111).** The skill was
+  listed in the Claude skills table but never referenced from the setup path,
+  so the one thing that validates every local prerequisite was invisible to
+  someone actually setting up.
+- **`.github/pull_request_template.md` renamed to
+  `.github/PULL_REQUEST_TEMPLATE.md` (#111).** Both work -- GitHub is
+  case-insensitive here -- but `sales.demos` used the uppercase form and the
+  inconsistency invited the question of which one is correct. Content unchanged.
+- `## Supported Platforms` is now `## Supported platforms`, so the anchor the
+  new at-a-glance table links to resolves.
 - **Default cluster name changed from `demo` to `edge` (#97).** Base domain
   changed from `example.com` to `internal.ames.net`. Aligns with the
   `sales.demos` inventory environment name and avoids collision with the RHDP

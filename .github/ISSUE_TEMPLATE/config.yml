@@ -1,0 +1,23 @@
+---
+# Turn off the blank-issue escape hatch so every issue arrives shaped.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Roadmap — which platform is in which phase
+    url: https://github.com/ericcames/image.builder.pipeline/blob/main/ROADMAP.md
+    about: >-
+      Phase order is enforced here. Check where a platform sits before asking
+      for it.
+  - name: Operational runbook
+    url: https://github.com/ericcames/image.builder.pipeline/blob/main/docs/operations.md
+    about: >-
+      Scheduled rebuilds, manual triggers, and what to do when one fails.
+  - name: Report a committed credential
+    url: https://github.com/ericcames/image.builder.pipeline/blob/main/.github/SECURITY.md
+    about: >-
+      Read the security policy first. Open the issue without quoting the value.
+  - name: Consuming the images rather than building them
+    url: https://github.com/ericcames/sales.demos
+    about: >-
+      This repo is the producer. Pointing a cluster at a published image is a
+      sales.demos concern.
