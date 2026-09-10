@@ -120,10 +120,38 @@
       changed_when: true
       register: iso_result
 
+    # MOVED OUT OF THE WORK DIRECTORY when sno_output_dir is set (#103).
+    # generate-iso.sh always sets it; --output-dir used to be parsed and then
+    # dropped, so the ISO stayed in a tempfile directory under /tmp — tmpfs on
+    # Fedora, so 1.4 GB of RAM, and gone on reboot before it reached a USB stick.
+    # Moved rather than copied for that reason. The rest of the work directory
+    # (auth/, install state) stays where openshift-install left it.
+    - name: Move the ISO to the output directory
+      when: sno_output_dir | default('') | length > 0
+      block:
+        - name: Create the output directory
+          ansible.builtin.file:
+            path: "{{ sno_output_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: Copy the ISO to the output directory
+          ansible.builtin.copy:
+            src: "{{ workdir.path }}/agent.x86_64.iso"
+            dest: "{{ sno_output_dir }}/agent.x86_64.iso"
+            remote_src: true
+            mode: "0644"
+
+        - name: Remove the ISO from the work directory
+          ansible.builtin.file:
+            path: "{{ workdir.path }}/agent.x86_64.iso"
+            state: absent
+
     - name: Display ISO location
       ansible.builtin.debug:
         msg: >-
-          ISO generated at {{ workdir.path }}/agent.x86_64.iso
+          ISO generated at
+          {{ (sno_output_dir | default('', true) or workdir.path) }}/agent.x86_64.iso
           ({{ iso_result.stdout_lines | default([]) | length }} lines of output)
 
     - name: Display work directory
