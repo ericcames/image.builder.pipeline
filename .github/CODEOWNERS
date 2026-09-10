@@ -6,8 +6,11 @@
 # both deliberate. See CLAUDE.md — the point is the branch-and-PR flow, not
 # waiting on a second person's availability.
 #
-# A rule naming a path that does not exist, or a user who cannot be resolved, is
-# SILENTLY INERT. Check with: gh api repos/ericcames/image.builder.pipeline/codeowners/errors
+# A rule naming a user who cannot be resolved is SILENTLY INERT — check with
+#   gh api repos/ericcames/image.builder.pipeline/codeowners/errors
+# That check validates owners and syntax. It does NOT validate paths: a rule for
+# a path that no longer exists is equally inert and still reports zero errors, so
+# paths need a human. Measured 2026-09-10 against two dead rules.
 
 # Catch-all
 *                       @ericcames @mlowcher61
