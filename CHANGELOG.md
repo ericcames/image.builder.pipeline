@@ -7,6 +7,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **The platform table said Windows Server 2022 was "Phase 3", and the tag it
+  points at has been in production use for days (#112).** Every task that row
+  depends on is Done in `ROADMAP.md` — unattended install, ISO remaster (#40),
+  CIS L1 hardening over WinRM with 44 controls, sysprep and publish — and
+  `sales.demos` consumes the published tag. "Phase 3" understated it.
+- **It does not say "Complete" either, and that is the point.** The RHEL 9 row
+  quotes a score because one exists (OpenSCAP 98.07 against a 95 gate). Windows
+  has no equivalent yet, so the row says **built and published** and links to a
+  short section explaining exactly what is and is not evidenced.
+- **Three things that look like proof and are not**, now written down so the
+  question is not re-litigated:
+    - **The `cis.level=L1` label.** That is the label #91 was about: it was
+      present on `20260907-0516` while the disk underneath was the unhardened
+      Sep 5 build, and the guest scored 9 of 27.
+    - **A green `Windows Day 1 - 4 Compliance Scan`.** The consumer's
+      `windows_compliance_fail_on_noncompliant` defaults to `false` — the scan
+      is a report, not a gate, deliberately, so a red node never appears in
+      front of a customer. Job 591 succeeded on 2026-09-09 and would have
+      succeeded at 9 of 27 too.
+    - **The layer size.** 5,438,513,415 bytes is a compressed layer; the
+      known-bad artifact was a 9,307,619,328-byte uncompressed qcow2. Not
+      comparable either way.
+- **What is actually known**, and is now in the README: the current tag was built
+  **sixty-one minutes after the #91 fix landed** (`dd8116b`, 2026-09-08 17:52:31
+  UTC; image created 18:53:28 UTC), so it is the first publish with the
+  stale-`creates:` path removed. The section names the one command that would
+  turn "published" into "verified".
+- **`## Quay.io private repo entitlement` was a troubleshooting write-up for a
+  resolved problem** — the free plan's zero private-repo allowance, a screenshot
+  of the Quay warning banner, and instructions to open a support case. The
+  Unlimited Repositories subscription is active to 2027-08-14. It is now a
+  two-row table saying which image is public, which is private, and why; the
+  lapse runbook and the screenshot moved to `docs/operations.md` rather than
+  being deleted.
+- **`sales.demos#3` was described as "shipped and waiting on a tag".** It has
+  the tag and consumes it.
+- **`### Working across both repos` was ~30 lines near-duplicated in
+  `sales.demos`' README.** Cut to the part specific to this repo — that its
+  skills are not reachable from a session started elsewhere — with a link to the
+  canonical copy. Two copies with nothing keeping them in step had already begun
+  to drift, which is the same problem ericcames/sales.demos-docs#12 was opened
+  for.
+
+### Changed
 - **Getting started opened with AWS prerequisites, but most readers only consume
   what this repo publishes (#114).** The README already says four lines above it
   that this repo is the producer and the dependency runs outward — Getting

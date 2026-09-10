@@ -83,29 +83,24 @@ ansible-playbook playbooks/build_cis_containerdisk.yml
 
 ### Working across both repos
 
-Most work needs only one of the two. Some spans both — the edge / SNO demo does
-by construction, since the installer ISO is built here and the cluster is
+Most work needs only one. Some spans both — the edge / SNO demo does by
+construction, since the installer ISO is built here and the cluster is
 configured in `sales.demos`.
 
-When it does, clone both and **start the agent in `sales.demos`, not here**:
+When it does, clone both and **start the agent in `sales.demos`, not here**: its
+`.mcp.json` is project-scoped, so the cluster servers load only in a session
+started there, and this repo has none. From there you can `cd` back here and run
+these playbooks anyway.
 
-```bash
-git clone https://github.com/ericcames/sales.demos.git
-git clone https://github.com/ericcames/image.builder.pipeline.git
-cd sales.demos
-claude .
-```
+**This repo's skills are the exception** — `first-time`, `dev-workflow`,
+`rhel9-containerdisk`, `windows-image-build` are discovered from the directory
+the agent starts in, so they are *not* reachable from a `sales.demos` session.
+Open a second session here to use them.
 
-That repo's `.mcp.json` is project-scoped, so its cluster servers load only in a
-session started in *that* directory — and **this repo has no MCP servers at
-all**, so a session started here gets no cluster tools. From there you can
-`cd ../image.builder.pipeline` and run these playbooks anyway, because the
-working directory does not restrict shell access. Better in one direction only.
-
-**This repo's skills are the exception.** Skills are discovered from the
-directory the agent starts in, so `first-time`, `dev-workflow`,
-`rhel9-containerdisk` and `windows-image-build` are **not** reachable from a
-session started in `sales.demos`. Open a second session here to use them.
+The full version of this, including the clone commands, is in
+[sales.demos' README](https://github.com/ericcames/sales.demos#working-across-the-factory-and-this-repo).
+It is kept there rather than duplicated here, because that is where the session
+is meant to start — and because the two copies had already begun to drift.
 
 ## Overview
 
@@ -144,11 +139,38 @@ Red Hat Image Builder (console.redhat.com)
 | RHEL 9 | containerDisk | CIS Level 1 Server | **Phase 1.7 — Complete** (public repo) |
 | RHEL 8 | AMI | CIS Level 1 Server | Phase 2 |
 | RHEL 10 | AMI | CIS Level 1 Server | Phase 2 — pending benchmark |
-| Windows Server 2022 | containerDisk | CIS Level 1 | Phase 3 (private repo — see [Quay.io entitlement](#quayio-private-repo-entitlement)) |
+| Windows Server 2022 | containerDisk | CIS Level 1 | **Built and published** — 44 controls applied, consumed by `sales.demos` ([caveat](#the-windows-row-says-published-not-verified)) |
 
 See [ROADMAP.md](ROADMAP.md) for full platform schedule and
 [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md) for the
 latest RHEL 9 compliance snapshot.
+
+### The Windows row says "published", not "verified"
+
+The RHEL 9 row quotes a score because one exists: OpenSCAP 98.07 against a
+95-point gate. The Windows row cannot, and the distinction is deliberate.
+
+[#91](https://github.com/ericcames/image.builder.pipeline/issues/91) was a tag
+labelled `cis.level=L1` whose disk was the unhardened build from two days
+earlier — a publish repackaged a stale local `disk.qcow2` because the conversion
+was guarded by `creates:` on a file cleanup never removed. The guest scored 9 of
+27. **The label is therefore not evidence**, and neither is a green compliance
+scan: `windows_compliance_fail_on_noncompliant` defaults to `false` in the
+consumer, so that job reports a score rather than gating on one.
+
+What *is* known about the current tag: it was built sixty-one minutes after the
+#91 fix landed, so it is the first publish with the stale-artifact path removed,
+and `sales.demos` reports the clone reaching the desktop with `win_ping`
+succeeding from AAP.
+
+To turn "published" into "verified", scan a guest as a gate:
+
+```
+Windows Day 1 - 4 Compliance Scan  -e windows_compliance_fail_on_noncompliant=true
+```
+
+Audit-tag evidence capture and the `data.json` generator are the two Phase 3
+tasks still open — see [ROADMAP.md](ROADMAP.md).
 
 ## Claude skills
 
@@ -192,31 +214,30 @@ runs outward from here.
 **The Windows golden image is deliberately split across two repos.** Building and
 publishing it is [#24](https://github.com/ericcames/image.builder.pipeline/issues/24)
 here; pointing a cluster at the published image is
-[sales.demos#3](https://github.com/ericcames/sales.demos/issues/3), which has
-shipped and is waiting on a tag. **The only thing binding them is one string — a
-containerdisk tag in a private quay repo.**
+[sales.demos#3](https://github.com/ericcames/sales.demos/issues/3). Both halves
+have shipped — `sales.demos` consumes a published tag today. **The only thing
+binding them is one string — a containerdisk tag in a private quay repo.**
 
 That split is the rule in `CLAUDE.md`: *"Producer/consumer across repos is
 intentional. Different audiences, different lifecycles."* Hardening and
 compliance evidence belong here; running demos belongs there.
 
-## Quay.io private repo entitlement
+## Quay.io repositories
 
-The Windows containerDisk is published to a **private** Quay.io repository
-(Microsoft licensing prohibits public redistribution). The RHEL containerDisk
-is public and needs no special entitlement.
+| Image | Repo | Why |
+|---|---|---|
+| `rhel9-cis-l1-golden` | **public** | Freely redistributable; consumers pull it with no pull secret |
+| `win2k22-cis-l1-golden` | **private** | Microsoft licensing prohibits public redistribution of Windows media |
 
-The free Open Source plan on Quay.io includes **0 private repositories**. To
-host the Windows image, you need at least the Developer plan (5 private repos,
-$15/mo) or a Red Hat developer subscription that includes private repo
-entitlement. Without it, Quay shows this warning:
+The private repository is entitled through an Unlimited Repositories
+subscription, active to **2027-08-14**. Consumers need a pull secret;
+`sales.demos` creates one in `playbooks/link_windows_image.yml`.
 
-![Quay.io private repo entitlement notification](docs/images/quay-private-repo-entitlement.png)
-
-If you are a Red Hat associate, open a support case requesting a developer
-subscription with private Quay.io repo access. The existing private repo
-continues to function while the notification is active — it is a warning, not
-a block.
+> This section used to be a troubleshooting write-up for the free plan's zero
+> private-repo allowance, with a screenshot of the Quay warning banner and
+> instructions to open a support case. That was resolved; the write-up outlived
+> it. Operational detail for the private repo lives in
+> [docs/operations.md](docs/operations.md).
 
 ## License
 
