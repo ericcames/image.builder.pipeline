@@ -1,6 +1,6 @@
 ---
 name: dev-workflow
-description: Mandatory development cycle for this repo — issue, branch, PR, merge
+description: "Mandatory development cycle for this repo — issue, branch, worktree, PR, merge. TRIGGER when: the user asks how to make a change, wants to know the dev process, is about to commit to main directly, or asks about branching or PR conventions. SKIP: if the user wants first-time machine setup — that is first-time — or wants to run a pipeline playbook, which is the pipeline-specific skill."
 ---
 
 # Development Workflow
@@ -8,7 +8,7 @@ description: Mandatory development cycle for this repo — issue, branch, PR, me
 Every change follows this cycle. No exceptions.
 
 ```
-Open issue → branch from main → implement → open PR (Closes #N) → CI green → merge → delete branch
+Open issue → worktree from main → implement → open PR (Closes #N) → CI green → merge → remove worktree
 ```
 
 ## Steps
@@ -16,7 +16,15 @@ Open issue → branch from main → implement → open PR (Closes #N) → CI gre
 1. **Open a GitHub issue first.** Label it (`gh label list`). Describe what and
    why. No implementation without an issue.
 
-2. **Branch from `main`.** Naming: `<type>-<issue>-<slug>`
+2. **Create a worktree.** Never edit in the main checkout — treat it as read-only.
+
+   ```bash
+   git worktree add -b <type>-<issue>-<slug> \
+     ../image.builder.pipeline-<slug> main
+   cd ../image.builder.pipeline-<slug>
+   ```
+
+   Naming: `<type>-<issue>-<slug>`
    (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`).
    Types: `feat`, `fix`, `docs`, `chore`, `refactor`.
 
@@ -29,14 +37,24 @@ Open issue → branch from main → implement → open PR (Closes #N) → CI gre
 
 5. **CI must pass.** Required status checks: `yamllint`, `ansible-lint`.
 
-6. **Merge.** Claude has standing authorization to merge green PRs without asking.
-   After merge: `git checkout main && git pull && git branch -d <branch>`.
+6. **Merge and clean up.** Claude has standing authorization to merge green PRs
+   without asking. After merge:
+
+   ```bash
+   cd /home/eames/git-repos/image.builder.pipeline
+   git worktree remove ../image.builder.pipeline-<slug>
+   git checkout main && git pull && git branch -d <branch>
+   ```
 
 ## Multi-session safety
 
-This working tree may be shared by multiple Claude sessions. Before committing:
+**Always use an isolated worktree for code changes.** The main checkout stays
+on `main` and serves as the read-only home base. Git enforces that no two
+worktrees can be on the same branch, so cross-session collisions are impossible.
 
-- Re-run `git branch --show-current` to confirm you're on your branch.
+Within a worktree, these habits remain as a safety net:
+
+- Re-run `git branch --show-current` immediately before `git add` and `git commit`.
 - Prefer `git add <explicit paths>` over `git add -A`.
 - If you see uncommitted changes you didn't make, do not discard them.
 
