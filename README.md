@@ -205,6 +205,7 @@ Workflows in this repo are packaged as skills under `.claude/skills/`.
 | `dev-workflow` | The mandatory issue → branch → PR → merge cycle |
 | `rhel9-containerdisk` | Builds the RHEL 9 CIS L1 containerDisk (Phase 1.7) |
 | `windows-image-build` | Builds the Windows Server 2022 containerDisk (Phase 3) |
+| `ami-build` | Builds the CIS L1 hardened RHEL AMI via Image Builder (Phase 1) |
 
 ## Output
 
