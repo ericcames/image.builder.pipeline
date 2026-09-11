@@ -220,6 +220,7 @@ echo "${K8S_AUTH_HOST:-<unset>}"
 # 3. Credentials are exported (design.md §4 — nothing is stored in this repo)
 [ -n "$K8S_AUTH_API_KEY" ] && echo "token set" || echo "K8S_AUTH_API_KEY missing"
 [ -n "$WINDOWS_ADMIN_PASSWORD" ] && echo "admin password set" || echo "WINDOWS_ADMIN_PASSWORD missing"
+```
 
 **If any of those three is missing, they are maintained in `sales.demos`** —
 this repo keeps no copy, and design.md §4.1 is the record of that:
@@ -239,6 +240,7 @@ Export them into the shell that runs the playbook. **Do not write them to a
 file** — `sales.demos` allows exactly one secrets file and no sourceable second
 copy, and a plaintext `.env` here would be that second copy.
 
+```bash
 # 4. virtctl — needed only on the windows_iso_source=upload path
 virtctl version --client >/dev/null 2>&1 && echo "virtctl ok" || echo "virtctl missing"
 
