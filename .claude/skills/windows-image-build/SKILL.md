@@ -14,16 +14,8 @@ Virtualization cluster at the published tag — lives in
 ships. The contract between them is one string: a containerdisk tag in a private
 quay repo.
 
-## Where the work is
-
-| | Status |
-|---|---|
-| PR 1 — unattended build on the cluster | **Merged** (#29) |
-| No keypress — re-master the ISO onto `efisys_noprompt.bin` | **Merged** ([#40](https://github.com/ericcames/image.builder.pipeline/issues/40)) |
-| PR 2 — CIS L1 Member Server hardening + sysprep over WinRM | **Done** |
-| PR 3 — export, containerdisk wrap, `podman push`, `design.md` §10 | **Merged** |
-
-Tracked in [#24](https://github.com/ericcames/image.builder.pipeline/issues/24).
+All phases are merged and proven end to end. Tracked in
+[#24](https://github.com/ericcames/image.builder.pipeline/issues/24).
 
 ## Why this builds on a cluster and not on a laptop
 
@@ -388,9 +380,8 @@ ansible-playbook -i inventories/sample/ \
 media cannot be redistributed. The playbook refuses to push to a public
 repository and re-checks afterwards, but a repository created *by* the push did
 not exist to be checked beforehand — so create
-`quay.io/zigfreed/win2k22-golden` as **Private** in the Quay UI first.
+`quay.io/zigfreed/win2k22-cis-l1-golden` as **Private** in the Quay UI first.
 
-**The default is now `win2k22-cis-l1-golden`**, matching the CIS-hardened build.
 For unhardened builds, override with
 `QUAY_WINDOWS_REPO=quay.io/zigfreed/win2k22-golden` and `-e cis_level=none`.
 

@@ -1,6 +1,6 @@
 ---
 name: first-time
-description: "First-time prerequisite check for the image.builder.pipeline repo. Validates the Red Hat Automation Hub token, installed collections, and AWS credential pattern. TRIGGER when: the user is new to this repo, asks how to get started, says prerequisites are missing, or hits errors about 401, 'couldn't resolve module/action', or an empty offline token. SKIP: if setup is already done and the user wants to run the pipeline — Eric runs AWS-touching playbooks himself."
+description: "First-time prerequisite check for the image.builder.pipeline repo. Validates everything needed for all three pipelines: AMI (Hub token, amazon.aws, AWS env vars), RHEL 9 containerdisk (podman, skopeo, quay login, kubectl, kubernetes.core, K8S_AUTH_HOST/K8S_AUTH_API_KEY), and Windows image build (virtctl, same cluster vars). TRIGGER when: the user is new to this repo, asks how to get started, says prerequisites are missing, or hits errors about 401, 'couldn't resolve module/action', or an empty offline token. SKIP: if setup is already done and the user wants to run the pipeline — Eric runs AWS-touching playbooks himself."
 ---
 
 # first-time
@@ -15,11 +15,19 @@ Print this once at the start:
 ```
 Checking image.builder.pipeline prerequisites.
 
+  AMI pipeline
   1. Red Hat Automation Hub token    ~/.ansible.cfg
   2. Ansible collections             via /collections-sync
   3. AWS credentials pattern         env vars (operator provides)
 
-Nothing here touches AWS or Red Hat APIs — it is all local validation.
+  ContainerDisk pipelines (RHEL 9 + Windows)
+  4. Container tools                 podman, skopeo
+  5. Quay registry login             podman login quay.io
+  6. Cluster tools                   kubectl, virtctl
+  7. kubernetes.core collection      via /collections-sync
+  8. Cluster credentials             K8S_AUTH_HOST, K8S_AUTH_API_KEY
+
+Nothing here touches AWS, clusters or Red Hat APIs — it is all local validation.
 ```
 
 ## Step 0 — Audit everything at once
@@ -27,6 +35,8 @@ Nothing here touches AWS or Red Hat APIs — it is all local validation.
 Read-only. Run it all, then work only on what is missing.
 
 ```bash
+# --- AMI pipeline ---
+
 # 1. ~/.ansible.cfg exists and has the rh_certified token
 grep -q 'galaxy_server.rh_certified' ~/.ansible.cfg 2>/dev/null \
   && grep -A3 'galaxy_server.rh_certified' ~/.ansible.cfg | grep -qE '^token=.+' \
@@ -43,7 +53,7 @@ test -f ansible.cfg \
   && echo "PROBLEM  project-local ansible.cfg present — it shadows ~/.ansible.cfg" \
   || echo "OK       no project-local ansible.cfg"
 
-# 4. Collections installed
+# 4. Collections — AMI pipeline
 ansible-galaxy collection list amazon.aws 2>/dev/null | grep -q amazon.aws \
   && echo "OK       amazon.aws collection" \
   || echo "MISSING  amazon.aws collection"
@@ -52,6 +62,42 @@ ansible-galaxy collection list amazon.aws 2>/dev/null | grep -q amazon.aws \
 test -f playbooks/build_cis_image.yml \
   && echo "OK       in the image.builder.pipeline repo" \
   || echo "PROBLEM  wrong directory"
+
+# --- ContainerDisk pipelines (RHEL 9 + Windows) ---
+
+# 6. Container tools
+command -v podman >/dev/null 2>&1 \
+  && echo "OK       podman" \
+  || echo "MISSING  podman"
+command -v skopeo >/dev/null 2>&1 \
+  && echo "OK       skopeo" \
+  || echo "MISSING  skopeo"
+
+# 7. Quay registry login
+podman login --get-login quay.io >/dev/null 2>&1 \
+  && echo "OK       quay.io login" \
+  || echo "MISSING  quay.io login (podman login quay.io)"
+
+# 8. Cluster tools
+command -v kubectl >/dev/null 2>&1 \
+  && echo "OK       kubectl" \
+  || echo "MISSING  kubectl"
+command -v virtctl >/dev/null 2>&1 \
+  && echo "OK       virtctl" \
+  || echo "MISSING  virtctl"
+
+# 9. Collections — containerDisk pipelines
+ansible-galaxy collection list kubernetes.core 2>/dev/null | grep -q kubernetes.core \
+  && echo "OK       kubernetes.core collection" \
+  || echo "MISSING  kubernetes.core collection"
+
+# 10. Cluster credentials (maintained in sales.demos, not here)
+[ -n "${K8S_AUTH_HOST:-}" ] \
+  && echo "OK       K8S_AUTH_HOST set" \
+  || echo "MISSING  K8S_AUTH_HOST (see sales.demos connection.yml)"
+[ -n "${K8S_AUTH_API_KEY:-}" ] \
+  && echo "OK       K8S_AUTH_API_KEY set" \
+  || echo "MISSING  K8S_AUTH_API_KEY (see sales.demos vault)"
 ```
 
 ## Step 1 — Red Hat Automation Hub token
@@ -150,3 +196,7 @@ orientation on the pipeline's current state and what work is in progress.
 | Token lookup returns empty string | Token line exists but value is blank | Re-copy from console.redhat.com |
 | `ansible-galaxy` 401 on certified content | `~/.ansible.cfg` shadowed by a project-local `ansible.cfg` | Delete the project-local file |
 | AWS auth errors | Env vars not exported | Step 3 — Eric provides these |
+| `podman: command not found` | Container tools not installed | `sudo dnf install podman skopeo` |
+| `Error: not logged into quay.io` | No quay registry login | `podman login quay.io` |
+| `kubectl: command not found` | Cluster tools not installed | Install from OpenShift mirror or upstream |
+| `K8S_AUTH_HOST` / `K8S_AUTH_API_KEY` missing | Cluster env vars not exported | See `sales.demos` connection.yml and vault |
