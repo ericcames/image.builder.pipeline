@@ -8,10 +8,10 @@ description: "Build and publish the CIS-hardened RHEL 9 containerDisk for OpenSh
 Phase 1.7 of the roadmap: the same CIS L1 RHEL 9 image the AMI pipeline
 produces, wrapped as a containerDisk for OpenShift Virtualization.
 
-**This is the producer half.** The consumer — pointing a cluster's
-DataImportCron at the published tag — is a separate PR in
-[sales.demos](https://github.com/ericcames/sales.demos). The contract is one
-string: `quay.io/zigfreed/rhel9-cis-l1-golden:<date>`.
+**This is the producer half.** The consumer —
+[`link_rhel9_image.yml`](https://github.com/ericcames/sales.demos) (sales.demos
+#202) — creates a DataImportCron pointing at the published tag. The contract is
+one string: `quay.io/zigfreed/rhel9-cis-l1-golden:<date>`.
 
 ## How it works
 
@@ -59,8 +59,12 @@ test -f playbooks/build_cis_containerdisk.yml \
 
 ## Validate API response (first time or after changes)
 
+**Ask the user before running this section** — it starts a real Image Builder
+compose (~15-30 min) and consumes a build slot. It is only needed the first time
+or after a change to the compose request structure.
+
 Before a full run, validate the guest-image compose response structure. This
-starts a real compose (~15-30 min) but lets you see the raw JSON to confirm
+starts a real compose but lets you see the raw JSON to confirm
 `wait_for_compose.py` parses it correctly.
 
 ```bash
@@ -189,14 +193,14 @@ workflow uses.
 
 ```bash
 # QUAY_REPO defaults to quay.io/zigfreed/rhel9-cis-l1-golden
-ansible-playbook playbooks/build_cis_containerdisk.yml
+ansible-playbook -i inventories/sample/ playbooks/build_cis_containerdisk.yml
 ```
 
 Override the Quay repo if needed:
 
 ```bash
 QUAY_REPO=quay.io/zigfreed/rhel9-cis-l1-golden \
-  ansible-playbook playbooks/build_cis_containerdisk.yml
+  ansible-playbook -i inventories/sample/ playbooks/build_cis_containerdisk.yml
 ```
 
 The playbook takes ~20-35 minutes: Image Builder compose (~15-25 min), qcow2
