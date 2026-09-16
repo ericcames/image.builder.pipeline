@@ -30,10 +30,11 @@ consumes the compliance data, and nothing here depends on either.
 > [!IMPORTANT]
 > Only the first three are published. The SNO ISO is built on the machine that
 > needs it, because the OpenShift pull secret is embedded in its Ignition
-> config. The installer *kit* named in [ROADMAP.md](ROADMAP.md) is a design
-> target that has since been
-> [decided against](https://ericcames.github.io/sales.demos-docs/image-factory/sno-kit/#why-this-is-not-published-to-quay) —
-> not an address.
+> config — so it can never be published. An installer *kit* image was designed
+> and
+> [decided against](https://ericcames.github.io/sales.demos-docs/image-factory/sno-kit/#why-this-is-not-published-to-quay)
+> (#138): the kit is text already in this public repo, and nothing consumes it
+> that needs a registry.
 
 ## 🚀 Getting started
 

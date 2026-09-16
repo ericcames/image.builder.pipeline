@@ -161,8 +161,8 @@ Platforms from `rego_policy_libraries` design doc, prioritized by demand:
 
 **Target:** Agent-Based Installer (ABI) ISO for bare-metal Single Node OpenShift,
 with AAP 2.7, OpenShift Virtualization, and CIS L1 node hardening baked in as
-Day 0 manifests. Published as a public installer kit on
-`quay.io/zigfreed/sno-installer-kit`, rebuilt monthly.
+Day 0 manifests. **The ISO is generated locally and nothing is published** — see
+the Distribution row below.
 
 This is the first **platform-level** image — an OpenShift installer, not a guest
 OS image. It doesn't conflict with the §9.3/§10.7 "OS-only" rule, which governs
@@ -177,7 +177,7 @@ guest AMIs and containerDisks; an ABI ISO is a platform installer.
 | CIS L1 | `ocp4-cis-node` MachineConfigs (Day 0) + Compliance Operator scan (Day 1) | Node-level hardening at first boot; scan verifies and reports gaps |
 | OCP version | Configurable, default latest stable channel | Tracks z-stream updates monthly |
 | Network | Static IP default, DHCP optional | DNS records break if the IP changes on reboot |
-| Distribution | Public kit image on Quay (manifests + templates + script); ISO generated locally with user's pull secret | Pull secret is a credential — cannot be in a public image |
+| Distribution | **This git repo.** The manifests, templates and `generate-iso.sh` ship here; the ISO is generated locally with the user's own pull secret | A pull secret is a credential, so the ISO can never be published. The kit itself is text already in a public repo, and no machine consumes it — [reasoning](https://ericcames.github.io/sales.demos-docs/image-factory/sno-kit/#why-this-is-not-published-to-quay) (#138) |
 | First target | Intel NUC (64 GB RAM, 2 TB SSD, UEFI boot from USB) | Available hardware for initial validation |
 
 See `docs/design.md` §11 for the full design.
@@ -190,7 +190,6 @@ See `docs/design.md` §11 for the full design.
 | Day 0 LVMS operator manifest + root partition sizing | Done (#97) |
 | NUC boot + operator verification | Done — OCP 4.22.13, all operators Succeeded |
 | CIS L1 MachineConfigs (extract from reference cluster) | In progress — sandbox scan COMPLIANT (0 remediations); stock RHCOS may not need Day 0 MCs |
-| Quay kit image publishing + monthly rebuild workflow | Pending |
 | NUC rebuild with edge/edge naming + LVMS | Pending |
 
 ---
