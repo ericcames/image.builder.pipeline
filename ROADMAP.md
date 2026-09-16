@@ -111,12 +111,35 @@ compliance evidence.
 |------|--------|
 | Unattended install + virtio drivers + QEMU guest agent | **Done** — `playbooks/build_windows_image.yml`; built on the cluster via plain KubeVirt VMs, no operator installed. **Measured 21m26s** end to end, ending in a `Stopped`, generalized VM |
 | ISO re-mastered onto `efisys_noprompt.bin` in a cluster pod — the build needs nobody at the console | **Done** — [#40](https://github.com/ericcames/image.builder.pipeline/issues/40); `playbooks/scripts/remaster_iso.sh`, Red Hat's `modify-windows-iso-file` recipe |
-| ansible-lockdown/Windows-2022-CIS L1 hardening over WinRM | **Done** — Play 2 of `build_windows_image.yml`; port-forward to the build VM's WinRM, CIS role, then sysprep. 44 controls applied, idempotent. `hosted_virtual_system_override: false` avoids the secedit lockout-order bug on KubeVirt; `win_skip_for_test: true` skips 11 WinRM-breaking controls |
+| ansible-lockdown/Windows-2022-CIS L1 hardening over WinRM | **Verified on `win2k22-cis-l1-golden:20260908-1853`, measured 2026-09-08** — 10 of 10 controls that cannot exist on a clean install, and 27 of 27 (100%) across the full set, read off the media *and* off the booted, sysprepped guest's own disk ([sales.demos#358](https://github.com/ericcames/sales.demos/issues/358), [#382](https://github.com/ericcames/sales.demos/issues/382)); see [How the Windows image is verified](README.md#how-the-windows-image-is-verified). Play 2 of `build_windows_image.yml`; port-forward to the build VM's WinRM, CIS role, then sysprep. `hosted_virtual_system_override: false` avoids the secedit lockout-order bug on KubeVirt; `win_skip_for_test: true` skips 11 WinRM-breaking controls |
 | WinRM over HTTPS on 5986 (consumer contract) | **Done** — configured by the answer file's FirstLogonCommands, verified working through CIS hardening |
 | Audit-tag evidence capture | Pending |
-| sysprep, wrap as containerDisk, `podman push` to Quay | **Done** — `playbooks/publish_windows_containerdisk.yml`; `VirtualMachineExport` → gzip → sparse expand → qcow2 → `FROM scratch`. Publishes `quay.io/zigfreed/win2k22-cis-l1-golden`, **private** |
+| sysprep, wrap as containerDisk, `podman push` to Quay | **Done** — `playbooks/publish_windows_containerdisk.yml`; `VirtualMachineExport` → gzip → sparse expand → qcow2 → `FROM scratch`. Publishes `quay.io/zigfreed/win2k22-cis-l1-golden`, **private**; current tag `20260908-1853`. Tags are immutable — repoint, never overwrite |
 | `data.json` generator for `golden_images/os/windows/server_2022/` | Pending |
 | `docs/design.md` §10 — add Windows-specific content (§10 exists for RHEL 9; Windows needs its own entries) | **Done** — §10.1/10.2 carry the Windows repo, labels and `cis.level=none`; §10.2.1 is the export path |
+
+### The L1 label was false once, which is why those rows name a tag
+
+`win2k22-cis-l1-golden:20260907-0516` carried **no hardening at all** — 0 of 10
+controls that cannot exist on a clean install. A `creates:` guard skipped the
+qcow2 conversion, so the publish packaged a two-day-old file and an unhardened
+Sep 5 disk shipped under a Sep 7 L1 tag and label ([#91](https://github.com/ericcames/image.builder.pipeline/issues/91)). The consumer
+scored 9 of 27 and the talk track was inviting customers to read that report
+([sales.demos#358](https://github.com/ericcames/sales.demos/issues/358)). That tag is deleted from Quay.
+
+**The gate that makes it unrepeatable** ([#92](https://github.com/ericcames/image.builder.pipeline/issues/92)):
+`playbooks/scripts/verify_cis_disk.py` reads the registry hives out of the qcow2
+*about to be packaged* and refuses to apply an L1 label the disk does not
+support — failing equally when it cannot reach a verdict. The label is a gate
+output, not an assertion.
+
+**Two things that look like proof and are not.** A green consumer compliance
+scan: `windows_compliance_fail_on_noncompliant` defaults to `false`, so it is a
+report, not a gate. And a `cis.level=L1` label on its own — which is exactly
+what #91 was.
+
+That is why a bare **Done** is not good enough in this table. It cannot be wrong
+out loud, and for a week it was.
 
 ---
 
