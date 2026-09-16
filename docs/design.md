@@ -752,11 +752,21 @@ The split:
 
 | Artifact | Location | Visibility |
 |---|---|---|
-| Installer kit (manifests, templates, `generate-iso.sh`) | `quay.io/zigfreed/sno-installer-kit:<YYYYMMDD>` | Public |
-| Generated ISO | User's machine (written to USB) | Never published |
+| Installer kit (manifests, templates, `generate-iso.sh`) | **This git repo** | Public |
+| Generated ISO | User's machine (written to USB) | **Never published** |
 
-The kit contains everything except the pull secret and SSH key. The user pulls
-it, provides their secrets, runs the generation script, and gets a bootable ISO.
+The kit contains everything except the pull secret and SSH key. The user clones
+the repo, provides their secrets, runs the generation script, and gets a
+bootable ISO.
+
+**The kit was designed to ship as a Quay image and that was decided against**
+(#138). It is text already in a public git repo; the expensive artifact — the
+ISO — is excluded by the constraint above, so publishing would ship the cheap
+half. Every other artifact in this pipeline is on a registry because a *machine*
+requires one (a DataVolume can import from a registry or HTTP and nothing else;
+EC2 requires an AMI). The kit's consumer is a person running a script. Full
+reasoning, including the counter-argument that would reverse it:
+[Image Factory → SNO Installer](https://ericcames.github.io/sales.demos-docs/image-factory/sno-kit/#why-this-is-not-published-to-quay).
 
 ### 11.3 ABI file structure
 
@@ -779,18 +789,21 @@ workdir/
     50-cis-l1-machineconfig-*.yaml
 ```
 
-### 11.4 Kit OCI labels
+### 11.4 Kit OCI labels — withdrawn
 
-Parallel to §10.2 containerDisk labels:
+This section specified six OCI labels parallel to §10.2, for a kit image that
+**is not published** (§11.2, #138). Withdrawn rather than left describing an
+artifact that does not exist.
 
-| Label | Example | Purpose |
-|---|---|---|
-| `ocp.version` | `4.20.32` | OCP version the kit was built for |
-| `ocp.channel` | `stable-4.20` | Channel tracked by monthly rebuilds |
-| `cis.profile` | `ocp4-cis-node` | Compliance Operator profile |
-| `cis.level` | `1` | CIS benchmark level |
-| `image-factory.build-date` | `2026-09-08T06:00:00Z` | ISO 8601 build timestamp |
-| `image-factory.pipeline` | `image-builder-pipeline` | Source pipeline identifier |
+The labels elsewhere in this pipeline exist for a reason that does not apply
+here: a **disk image is opaque**, so its claims have to be checked
+independently — which is why `verify_cis_disk.py` reads the registry hives and
+gates `com.redhat.cis.level` (§10.5). A directory of YAML in git is not opaque.
+Labelling it would be ceremony with no verification behind it.
+
+If the counter-argument in the [reasoning](https://ericcames.github.io/sales.demos-docs/image-factory/sno-kit/#why-this-is-not-published-to-quay) ever holds — a consumer
+inside a cluster, rather than a person with a USB stick — this section is the
+starting point for reinstating it.
 
 ### 11.5 CIS L1 approach
 
@@ -933,16 +946,16 @@ different IP after a reboot, breaking those records and making the cluster
 unreachable. Static IP is the default; `generate-iso.sh --dhcp` is available
 for quick tests with DHCP reservations.
 
-### 11.8 Scheduled rebuilds
+### 11.8 Scheduled rebuilds — not applicable
 
-Monthly, on the 1st of the month, via GitHub Actions
-(`sno-installer-rebuild.yml`). Parallel to the RHEL 9 containerDisk rebuild
-(§10.6). Checks for the latest OCP z-stream in the configured channel, updates
-the kit manifests if the version changed, builds and pushes a new kit image.
-Manual trigger via `workflow_dispatch`.
+This section specified a monthly `sno-installer-rebuild.yml` that built and
+pushed a new kit image. With nothing published (§11.2, #138) there is nothing to
+push, and no workflow exists.
 
-Secrets: `QUAY_USERNAME` and `QUAY_PASSWORD` (shared with the containerDisk
-rebuild workflow).
+**The OCP version still needs tracking**, and that is now a repo change rather
+than a build: the version and channel live in `playbooks/vars/sno_defaults.yml`,
+so a z-stream bump is a pull request, reviewable and visible in `git log`. The
+ISO is generated from whatever the repo says at the time it is run.
 
 ### 11.9 Home-lab DNS — dnsmasq alongside systemd-resolved
 
