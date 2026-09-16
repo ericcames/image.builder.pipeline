@@ -85,16 +85,16 @@ the rules that came out of it, and each one is paid for.
 - **One concern per PR** — group by shared root cause, not item count.
 - **ansible.platform over ansible.controller** wherever possible. `ansible.controller` is legacy.
 
-## Current state (2026-09-05)
+## Current state
 
-- Phase 1 (RHEL 9 CIS L1) — **Complete.** Latest validated AMI `ami-0228edcda0bbb6c3a`, score 98.07 / gate 95, 5 curated exempt entries. Pipeline hardened against token expiration / OOM / cleanup-on-failure. See [`docs/cis-l1-rhel9-status.md`](docs/cis-l1-rhel9-status.md) for the snapshot.
-- Phase 1.5 (consumer integration) — tagging contract applied pipeline-side; `sales.demos` tag-filter swap is the remaining work
-- Phase 1.7 (RHEL 9 containerDisk) — **Complete.** First image `quay.io/zigfreed/rhel9-cis-l1-golden:20260905-0411`. Monthly scheduled rebuild via GitHub Actions (`containerdisk-rebuild.yml`). See `docs/design.md` §10 for the containerDisk contract.
-- Phase 2 (CIS L2, RHEL 8) — not started
-- Phase 3 (Windows containerDisk) — **In progress.** Build and CIS L1 hardening done (`build_windows_image.yml`, #24). ISO re-master for no-keypress boot (#40), CIS hardening over WinRM (44 controls, verified 2026-09-06), and export/publish (`publish_windows_containerdisk.yml`) all shipped. Audit-tag evidence capture still pending. Consumer is `sales.demos#3`, already shipped.
-- Phase 5 (SNO installer kit) — **Scaffolding.** ABI ISO for bare-metal SNO with AAP 2.7, CNV, CIS L1. Playbook, templates, Day 0 manifests, `generate-iso.sh` laid down (#86). CIS MachineConfigs and Quay publishing pending.
+**Not restated here.** [`ROADMAP.md`](ROADMAP.md) carries per-phase status, and
+[`README.md`](README.md) the platform table with its evidence links — this
+section used to hold a third copy, dated 2026-09-05, and it drifted: it still
+called Phase 3 "In progress" after the Windows image had been verified at 27 of
+27 on `win2k22-cis-l1-golden:20260908-1853`.
 
-See `ROADMAP.md` for the full plan.
+That is the same failure the roadmap's own #91 note describes, one level up. A
+status summary with no forcing function to update it is worse than a link.
 
 ## Workflow
 
