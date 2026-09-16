@@ -9,9 +9,13 @@ contact_links:
       Phase order is enforced here. Check where a platform sits before asking
       for it.
   - name: Operational runbook
-    url: https://github.com/ericcames/image.builder.pipeline/blob/main/docs/operations.md
+    url: https://ericcames.github.io/sales.demos-docs/image-factory/operations/
     about: >-
       Scheduled rebuilds, manual triggers, and what to do when one fails.
+  - name: How the factory works, and how it extends
+    url: https://ericcames.github.io/sales.demos-docs/image-factory/
+    about: >-
+      Architecture, compliance evidence, and adding an OS, benchmark or target.
   - name: Report a committed credential
     url: https://github.com/ericcames/image.builder.pipeline/blob/main/.github/SECURITY.md
     about: >-

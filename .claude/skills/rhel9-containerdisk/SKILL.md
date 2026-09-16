@@ -183,7 +183,7 @@ Three GitHub repo secrets power the scheduled build:
 
 Check last run: `gh run list --workflow=containerdisk-rebuild.yml --limit 5`
 
-See [docs/operations.md](../../docs/operations.md) for secret rotation and
+See the [operations runbook](https://ericcames.github.io/sales.demos-docs/image-factory/operations/) for secret rotation and
 troubleshooting.
 
 ## Run (manual)
