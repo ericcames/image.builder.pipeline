@@ -28,6 +28,5 @@ As a reminder — these are never committed to this repo:
 - OpenShift/Kubernetes credentials (`K8S_AUTH_HOST`, `K8S_AUTH_API_KEY` — environment variables only)
 - Quay.io credentials (belong in `podman login` session or GitHub Actions secrets only)
 - Inventory files other than `inventories/sample/` (all others are gitignored)
-- `docs/aws-environment.md` (gitignored — local environment notes)
 
 If you spot any of the above committed by mistake, open an issue immediately.

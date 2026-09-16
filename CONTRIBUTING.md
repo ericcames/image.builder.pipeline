@@ -56,6 +56,5 @@ Never commit:
 
 - Credentials, tokens, or passwords of any kind
 - Inventory files other than `inventories/sample/` (all others are gitignored)
-- `docs/aws-environment.md` (gitignored — local notes only)
 
 Red Hat offline tokens come from `~/.ansible.cfg`. AWS credentials come from environment variables. Neither belongs in this repo.

@@ -14,7 +14,7 @@ and serving as the source of hardened images for
 
 **Target:** End-to-end build → scan → `data.json` for RHEL 9 CIS Level 1 Server.
 
-Validated 2026-05-12. Current state in [docs/cis-l1-rhel9-status.md](docs/cis-l1-rhel9-status.md).
+Validated 2026-05-12. Current state in [Compliance evidence](https://ericcames.github.io/sales.demos-docs/image-factory/compliance-evidence/).
 
 | Task | Status |
 |------|--------|

@@ -74,7 +74,7 @@ the rules that came out of it, and each one is paid for.
 
 ### Hygiene
 - **Always delete tokens.** Any playbook that creates a Red Hat or AAP token must delete it in an `always:` block.
-- **Credentials never in repo.** RH token from `~/.ansible.cfg`; AWS via env vars; `docs/aws-environment.md` is gitignored for local notes.
+- **Credentials never in repo, and never in a file.** RH token from `~/.ansible.cfg`; AWS from environment variables only. `docs/aws-environment.md` was a plaintext credentials file documented as "local notes"; it is **deleted and the practice is retired** — do not reintroduce a file for this. The `.gitignore` entry stays as a tripwire. AWS credentials come from Ansible Product Demos and will move into a vault-encrypted `secrets.yml`; that is a code change with its own issue.
 - **There is no CHANGELOG.md, and adding one back is not the fix** (#119). It
   never had a release to anchor it — 19 entry blocks under a single
   `[Unreleased]` heading, zero tags, zero releases — and the same prose was
@@ -100,7 +100,7 @@ status summary with no forcing function to update it is worse than a link.
 
 - **Start Claude in `sales.demos` for anything touching the cluster.** This repo has **no MCP servers** — no `.mcp.json`, nothing in settings. `sales.demos/.mcp.json` defines `openshift-sandbox` (`kubernetes-mcp-server`, toolsets `core,config,kubevirt`, read-write) and `openshift-demo` (same, read-only). Both are project-scoped, so they load **only** when Claude Code starts in that directory. A session started there can still `cd` here and run these playbooks, so starting there is strictly better than the reverse — there is no cost the other way. **MCP does not remove the credential requirement**: `build_windows_image.yml` and `publish_windows_containerdisk.yml` read `K8S_AUTH_HOST` and `K8S_AUTH_API_KEY` from the environment (`playbooks/build_windows_image.yml:73-74`, asserted at `:239-242`), and `docs/design.md` §4.1 says where those come from. MCP helps with cluster inspection and the consumer half, not with those.
 - **`main` is protected** — PRs always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass via `.github/workflows/lint.yml`.
-- **Scheduled builds** — `.github/workflows/containerdisk-rebuild.yml` rebuilds the RHEL 9 containerDisk monthly (1st of month, 06:00 UTC). Manual trigger via `workflow_dispatch`. See `docs/operations.md` for the runbook.
+- **Scheduled builds** — `.github/workflows/containerdisk-rebuild.yml` rebuilds the RHEL 9 containerDisk monthly (1st of month, 06:00 UTC). Manual trigger via `workflow_dispatch`. See the [operations runbook](https://ericcames.github.io/sales.demos-docs/image-factory/operations/) on the docs site.
 - **Branch naming:** `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`)
 - **Always use an isolated worktree for code changes.** Do not create branches,
   edit files, or commit in the main checkout — treat it as read-only. The main
@@ -161,8 +161,6 @@ status summary with no forcing function to update it is worse than a link.
 | `playbooks/scripts/fetch_iso.sh` | Windows ISO fetch helper for the re-master pod |
 | `playbooks/scripts/wim_images.py` | WIM image name parser for `windows_image_name` validation |
 | `playbooks/scripts/verify_cis_disk.py` | Reads CIS hardening off a Windows disk offline; gates the `com.redhat.cis.level` label (#91) |
-| `docs/cis-l1-rhel9-status.md` | Latest validated compliance snapshot |
-| `docs/operations.md` | Operational runbook — manual rebuild, secret rotation, troubleshooting |
 | `.github/workflows/lint.yml` | CI lint gate (yamllint + ansible-lint) on push/PR to main |
 | `.github/workflows/containerdisk-rebuild.yml` | Monthly scheduled RHEL 9 containerDisk rebuild + manual dispatch |
 | `inventories/sample/` | Template inventory; copy to `inventories/<customer>-<platform>/` |

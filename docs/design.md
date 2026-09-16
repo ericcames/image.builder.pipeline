@@ -713,7 +713,7 @@ Three repo secrets provide credentials (see §4). The same playbook
 (`build_cis_containerdisk.yml`) runs identically in CI and locally — the only
 difference is how credentials are injected.
 
-See `docs/operations.md` for the operational runbook.
+See the [operations runbook](https://ericcames.github.io/sales.demos-docs/image-factory/operations/) on the docs site.
 
 ### 10.7 Architecture: OS-only, same as AMIs
 
