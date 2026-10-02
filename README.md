@@ -1,5 +1,8 @@
 # image.builder.pipeline
 
+[![Rebuild RHEL 9 CIS containerDisk](https://github.com/ericcames/image.builder.pipeline/actions/workflows/containerdisk-rebuild.yml/badge.svg)](https://github.com/ericcames/image.builder.pipeline/actions/workflows/containerdisk-rebuild.yml)
+[![Lint](https://github.com/ericcames/image.builder.pipeline/actions/workflows/lint.yml/badge.svg)](https://github.com/ericcames/image.builder.pipeline/actions/workflows/lint.yml)
+
 The image factory. It builds CIS-hardened machine images — and, just as
 deliberately, the evidence that they *are* hardened.
 
