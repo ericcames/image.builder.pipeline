@@ -13,23 +13,23 @@
 # paths need a human. Measured 2026-09-10 against two dead rules.
 
 # Catch-all
-*                       @ericcames @mlowcher61
+*                       @ericcames @mlowcher61 @ynotbhatc
 
 # The conventions contract — changes here need extra scrutiny.
-/CLAUDE.md              @ericcames @mlowcher61
-/CONTRIBUTING.md        @ericcames @mlowcher61
+/CLAUDE.md              @ericcames @mlowcher61 @ynotbhatc
+/CONTRIBUTING.md        @ericcames @mlowcher61 @ynotbhatc
 
 # Secret hygiene — this repo is public.
-/.gitignore             @ericcames @mlowcher61
-/.github/               @ericcames @mlowcher61
+/.gitignore             @ericcames @mlowcher61 @ynotbhatc
+/.github/               @ericcames @mlowcher61 @ynotbhatc
 
 # The pipeline itself
-/playbooks/             @ericcames @mlowcher61
-/roles/                 @ericcames @mlowcher61
-/inventories/           @ericcames @mlowcher61
-/collections/           @ericcames @mlowcher61
-/.claude/skills/        @ericcames @mlowcher61
+/playbooks/             @ericcames @mlowcher61 @ynotbhatc
+/roles/                 @ericcames @mlowcher61 @ynotbhatc
+/inventories/           @ericcames @mlowcher61 @ynotbhatc
+/collections/           @ericcames @mlowcher61 @ynotbhatc
+/.claude/skills/        @ericcames @mlowcher61 @ynotbhatc
 
 # Governance + docs
-/docs/                  @ericcames @mlowcher61
-/ROADMAP.md             @ericcames @mlowcher61
+/docs/                  @ericcames @mlowcher61 @ynotbhatc
+/ROADMAP.md             @ericcames @mlowcher61 @ynotbhatc
