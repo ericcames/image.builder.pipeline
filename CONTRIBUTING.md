@@ -5,11 +5,21 @@
 **Every change follows this sequence — no exceptions:**
 
 ```
-Open issue → branch from main → implement → open PR (Closes #N) → merge → issue closes
+Open issue → worktree + branch from main → implement → open PR (Closes #N) → merge → issue closes
 ```
 
 1. **Open an issue first** — before writing a single line of code or making any change, open a GitHub issue describing what you're fixing or adding and why. No implementation without an issue.
 2. **Branch from `main`** — use the naming pattern `<type>-<issue>-<slug>` (e.g. `fix-22-token-path`, `feat-21-windows-containerdisk`, `docs-15-exempt-controls`).
+   **Work in an isolated worktree, never in the main checkout.** More than one Claude Code session can share a checkout, and the branch can change under you, so the main checkout stays on `main` and is read-only:
+
+   ```bash
+   git worktree add ../image.builder.pipeline-<slug> -b <type>-<issue>-<slug> origin/main
+   cd ../image.builder.pipeline-<slug>
+   # ... work, commit, push, PR ...
+   git worktree remove ../image.builder.pipeline-<slug>
+   ```
+
+   This is mandatory, not a suggestion — see [CLAUDE.md § Workflow](CLAUDE.md#workflow) for why.
 3. **One concern per PR** — group changes by shared root cause, not item count. The test: would you revert these together? If yes, ship them together. Behavior changes stay isolated regardless.
 4. **Reference the issue** — include `Closes #<number>` in your PR description so the issue closes automatically on merge.
 5. **PRs target `main`** — `main` is protected; a PR is always required, even for the repo owner. CI checks (`yamllint`, `ansible-lint`) must pass before merge.
